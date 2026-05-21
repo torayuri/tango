@@ -377,8 +377,8 @@
   <div class="doc-content" id="doc-content"></div>
 </div>
 
-<!-- Selection toolbar -->
-<div class="sel-toolbar" id="sel-toolbar">
+<!-- Selection toolbar (onmousedown=preventDefault keeps selection alive when tapping buttons) -->
+<div class="sel-toolbar" id="sel-toolbar" onmousedown="event.preventDefault()">
   <button class="sel-color-btn" style="color:#ef4444" onclick="applyTextColor('#ef4444')">A</button>
   <button class="sel-color-btn" style="color:#2193b0" onclick="applyTextColor('#2193b0')">A</button>
   <button class="sel-color-btn" style="color:#10b981" onclick="applyTextColor('#10b981')">A</button>
@@ -1022,6 +1022,8 @@ function closeFmt() {
 }
 
 /* ── Selection toolbar ── */
+let savedRange = null;
+
 (function() {
   function onDocSel() {
     if (!document.getElementById('doc-view-screen').classList.contains('active')) return;
@@ -1031,29 +1033,41 @@ function closeFmt() {
       if (!sel || sel.isCollapsed || !sel.rangeCount) { hideSelToolbar(); return; }
       const range = sel.getRangeAt(0);
       if (!container.contains(range.commonAncestorContainer)) { hideSelToolbar(); return; }
+      savedRange = range.cloneRange();
       showSelToolbar(range.getBoundingClientRect());
-    }, 60);
+    }, 100);
   }
   document.getElementById('doc-content').addEventListener('mouseup', onDocSel);
   document.getElementById('doc-content').addEventListener('touchend', onDocSel);
+
   document.getElementById('doc-content').addEventListener('click', e => {
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     const t = e.target.closest('.red-hidden');
     if (t) t.classList.toggle('revealed');
   });
+
   document.addEventListener('mousedown', e => {
-    if (!e.target.closest('#sel-toolbar') && !e.target.closest('#doc-content')) hideSelToolbar();
+    if (!e.target.closest('#sel-toolbar') && !e.target.closest('#doc-content')) {
+      hideSelToolbar();
+      savedRange = null;
+    }
   });
+  document.addEventListener('touchstart', e => {
+    if (!e.target.closest('#sel-toolbar') && !e.target.closest('#doc-content')) {
+      hideSelToolbar();
+      savedRange = null;
+    }
+  }, { passive: true });
 })();
 
 function showSelToolbar(rect) {
   const tb = document.getElementById('sel-toolbar');
   tb.style.display = 'flex';
-  const tbW = tb.offsetWidth || 260, tbH = tb.offsetHeight || 48;
-  let top = rect.top + window.scrollY - tbH - 10;
-  if (top < 60) top = rect.bottom + window.scrollY + 10;
-  let left = rect.left + window.scrollX + rect.width / 2 - tbW / 2;
+  const tbW = tb.offsetWidth || 300, tbH = tb.offsetHeight || 50;
+  let top = rect.top - tbH - 10;
+  if (top < 60) top = rect.bottom + 10;
+  let left = rect.left + rect.width / 2 - tbW / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - tbW - 8));
   tb.style.top = top + 'px';
   tb.style.left = left + 'px';
@@ -1062,31 +1076,31 @@ function hideSelToolbar() {
   document.getElementById('sel-toolbar').style.display = 'none';
 }
 
-function wrapSelection(className, style) {
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
-  const range = sel.getRangeAt(0);
-  if (!document.getElementById('doc-content').contains(range.commonAncestorContainer)) return false;
+function wrapSavedRange(className, style) {
+  if (!savedRange) return false;
+  const container = document.getElementById('doc-content');
+  if (!container.contains(savedRange.commonAncestorContainer)) return false;
   const span = document.createElement('span');
   if (className) span.className = className;
   if (style) span.setAttribute('style', style);
   try {
-    range.surroundContents(span);
+    savedRange.surroundContents(span);
   } catch {
-    const frag = range.extractContents();
+    const frag = savedRange.extractContents();
     span.appendChild(frag);
-    range.insertNode(span);
+    savedRange.insertNode(span);
   }
-  sel.removeAllRanges();
+  savedRange = null;
+  window.getSelection().removeAllRanges();
   return true;
 }
 
 function applyTextColor(color) {
-  if (wrapSelection('', `color:${color}`)) { saveDocContent(); hideSelToolbar(); }
+  if (wrapSavedRange('', `color:${color}`)) { saveDocContent(); hideSelToolbar(); }
 }
 function applyRedSheet(color) {
   const c = color || '#2d3748';
-  if (wrapSelection('red-hidden', `background:${c};color:${c};`)) { saveDocContent(); hideSelToolbar(); }
+  if (wrapSavedRange('red-hidden', `background:${c};color:${c};`)) { saveDocContent(); hideSelToolbar(); }
 }
 function saveDocContent() {
   const all = loadDecks(), doc = all.find(d => d.id === currentDocId);
