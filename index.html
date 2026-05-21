@@ -10,6 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="暗記カード">
   <link rel="manifest" href="manifest.json">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -166,6 +167,35 @@
     .rbtn-ng{background:linear-gradient(135deg,var(--p1),var(--p2));color:white;}
     .rbtn-all{background:linear-gradient(135deg,var(--s1),var(--s2));color:white;}
     .rbtn-back{background:var(--card-bg);color:var(--title);border:2px solid var(--border);}
+
+    /* ── home tabs ── */
+    .home-tabs{display:flex;background:var(--border);border-radius:12px;padding:3px;width:100%;margin-bottom:16px;}
+    .home-tab{flex:1;padding:10px;border:none;border-radius:9px;font-size:15px;font-weight:bold;cursor:pointer;color:var(--sub);background:none;transition:all .2s;-webkit-tap-highlight-color:transparent;}
+    .home-tab.active{background:var(--card-bg);color:var(--title);box-shadow:0 1px 4px rgba(0,0,0,.1);}
+
+    /* ── doc viewer ── */
+    .doc-content{width:100%;background:var(--doc-bg,var(--card-bg));color:var(--doc-fg,var(--title));font-size:var(--doc-sz,16px);line-height:1.8;padding:20px 16px 80px;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:16px;min-height:60vh;transition:color .2s,background .2s,font-size .2s;}
+    .doc-content h1,.doc-content h2,.doc-content h3{margin:1em 0 .4em;font-weight:bold;}
+    .doc-content h1{font-size:1.5em;} .doc-content h2{font-size:1.3em;} .doc-content h3{font-size:1.15em;}
+    .doc-content p{margin-bottom:.7em;}
+    .doc-content strong{font-weight:bold;} .doc-content em{font-style:italic;}
+    .doc-content ul,.doc-content ol{margin:.4em 0 .7em 1.5em;} .doc-content li{margin-bottom:.25em;}
+    .doc-content table{border-collapse:collapse;width:100%;margin:.5em 0;overflow-x:auto;display:block;}
+    .doc-content td,.doc-content th{border:1px solid var(--border);padding:6px 10px;min-width:60px;}
+
+    /* ── format FAB ── */
+    .fmt-fab{position:fixed;bottom:24px;right:20px;width:50px;height:50px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--p1),var(--p2));color:white;font-size:15px;font-weight:bold;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:100;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:transform .15s;}
+    .fmt-fab:active{transform:scale(.92);}
+
+    /* ── format panel ── */
+    .fmt-section{margin-bottom:20px;}
+    .fmt-label{font-size:12px;color:var(--sub);font-weight:bold;margin-bottom:10px;}
+    .fmt-colors{display:flex;gap:10px;flex-wrap:wrap;}
+    .fmt-color{width:34px;height:34px;border-radius:50%;border:3px solid transparent;cursor:pointer;transition:transform .15s,border-color .15s;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 6px rgba(0,0,0,.12);}
+    .fmt-color.active{border-color:var(--title);transform:scale(1.18);}
+    .fmt-size-row{display:flex;align-items:center;gap:16px;}
+    .fmt-size-btn{width:40px;height:40px;border-radius:50%;border:2px solid var(--border);background:var(--card-bg);color:var(--title);font-size:22px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+    .fmt-size-val{font-size:16px;font-weight:bold;color:var(--title);min-width:50px;text-align:center;}
   </style>
 </head>
 <body>
@@ -213,9 +243,13 @@
 <!-- ① Home -->
 <div id="home-screen" class="screen active">
   <div class="app-logo">暗記カードアプリ</div>
-  <p class="app-sub">Excelを読み込んで暗記しよう</p>
+  <p class="app-sub">単語帳・資料を管理しよう</p>
   <div id="user-area" style="width:100%"></div>
-  <button class="add-btn" onclick="goAdd()">＋ 新しいデッキを追加</button>
+  <div class="home-tabs">
+    <button class="home-tab active" id="htab-flashcard" onclick="setHomeTab('flashcard')">単語帳</button>
+    <button class="home-tab" id="htab-document" onclick="setHomeTab('document')">資料</button>
+  </div>
+  <button class="add-btn" id="home-add-btn" onclick="goAdd()">＋ 新しいデッキを追加</button>
   <div class="deck-list" id="deck-list"></div>
 </div>
 
@@ -287,6 +321,73 @@
     <button class="rbtn rbtn-ng"  id="rbtn-ng" onclick="retryNG()">未暗記を再挑戦 🔄</button>
     <button class="rbtn rbtn-all"              onclick="retryAll()">全単語をやり直す 🔄</button>
     <button class="rbtn rbtn-back"             onclick="goDetail(currentDeckId)">デッキに戻る ←</button>
+  </div>
+</div>
+
+<!-- ⑥ Doc Add -->
+<div id="doc-add-screen" class="screen">
+  <div class="s-header">
+    <button class="back-btn" onclick="goHome()">←</button>
+    <span class="s-title">資料を追加</span>
+  </div>
+  <div class="upload-area" id="doc-upload-area">
+    <div class="ul-icon">📄</div>
+    <div class="ul-title">Wordファイルをアップロード</div>
+    <div class="ul-sub">タップ、またはドラッグ＆ドロップ</div>
+    <button class="ul-pick" onclick="document.getElementById('doc-file-input').click()">ファイルを選択</button>
+    <input type="file" id="doc-file-input" accept=".docx" style="display:none">
+    <div class="ul-count" id="doc-ul-count" style="display:none"></div>
+  </div>
+  <div style="width:100%;margin-bottom:4px">
+    <div class="f-label">資料名</div>
+    <input type="text" class="f-input" id="doc-name" placeholder="資料名を入力してください">
+  </div>
+  <button class="save-btn" id="doc-save-btn" disabled onclick="saveDoc()">保存して開く</button>
+  <div class="hint-box"><strong>対応ファイル</strong>Word文書（.docx）テキスト・見出し・リストなどを表示できます</div>
+</div>
+
+<!-- ⑦ Doc Detail -->
+<div id="doc-detail-screen" class="screen">
+  <div class="s-header">
+    <button class="back-btn" onclick="goHome()">←</button>
+    <span class="s-title" id="doc-det-name"></span>
+    <button class="s-action" onclick="editDocName()">編集</button>
+  </div>
+  <div id="doc-det-body" style="width:100%"></div>
+</div>
+
+<!-- ⑧ Doc View -->
+<div id="doc-view-screen" class="screen">
+  <div class="s-header" style="position:sticky;top:0;background:var(--bg);z-index:10;padding-bottom:8px;">
+    <button class="back-btn" onclick="goDocDetail(currentDocId)">←</button>
+    <span class="s-title" id="doc-view-title"></span>
+  </div>
+  <div class="doc-content" id="doc-content"></div>
+</div>
+
+<!-- Format FAB -->
+<button class="fmt-fab" id="fmt-fab" style="display:none" onclick="openFmt()">Aa</button>
+
+<!-- Format overlay + panel -->
+<div class="overlay" id="fmt-ov" onclick="closeFmt()"></div>
+<div class="btm-panel" id="fmt-panel">
+  <div class="panel-handle"></div>
+  <div class="panel-title">文字スタイル</div>
+  <div class="fmt-section">
+    <div class="fmt-label">文字色</div>
+    <div class="fmt-colors" id="fmt-fg"></div>
+  </div>
+  <div class="fmt-section">
+    <div class="fmt-label">背景色</div>
+    <div class="fmt-colors" id="fmt-bg"></div>
+  </div>
+  <div class="fmt-section">
+    <div class="fmt-label">文字サイズ</div>
+    <div class="fmt-size-row">
+      <button class="fmt-size-btn" onclick="changeFontSize(-1)">－</button>
+      <span class="fmt-size-val" id="fmt-sz-val">16px</span>
+      <button class="fmt-size-btn" onclick="changeFontSize(1)">＋</button>
+    </div>
   </div>
 </div>
 
@@ -463,15 +564,32 @@ function applyOrder(arr) { return getOrder() === 'seq' ? [...arr] : shuffle([...
 function shuffle(a)  { for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 /* ── State ── */
+let homeTab = 'flashcard';
 let currentDeckId = null, currentMode = 'all';
+let currentDocId = null, pendingDocHtml = null;
 let currentWords = [], memorized = [], notMemorized = [];
 let idx = 0, round = 1, flipped = false, pendingWords = null;
 
 /* ── Navigation ── */
-function showScreen(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0); }
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+  document.getElementById('fmt-fab').style.display = id === 'doc-view-screen' ? 'flex' : 'none';
+}
 function goHome()    { renderHome(); showScreen('home-screen'); }
 function goDetail(id){ currentDeckId = id; renderDetail(); showScreen('detail-screen'); }
+/* ── Home tab ── */
+function setHomeTab(t) {
+  homeTab = t;
+  document.getElementById('htab-flashcard').classList.toggle('active', t === 'flashcard');
+  document.getElementById('htab-document').classList.toggle('active', t === 'document');
+  document.getElementById('home-add-btn').textContent = t === 'document' ? '＋ 新しい資料を追加' : '＋ 新しいデッキを追加';
+  renderHome();
+}
+
 function goAdd() {
+  if (homeTab === 'document') { goDocAdd(); return; }
   pendingWords = null;
   document.getElementById('file-input').value = '';
   document.getElementById('deck-name').value  = '';
@@ -493,13 +611,22 @@ function renderUserArea() {
 
 /* ── Home ── */
 function renderHome() {
-  const decks = loadDecks();
+  const all = loadDecks();
+  const items = homeTab === 'document'
+    ? all.filter(d => d.type === 'document')
+    : all.filter(d => !d.type || d.type === 'flashcard');
   const el = document.getElementById('deck-list');
-  if (!decks.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div>デッキがまだありません<br>上のボタンから追加しよう</div></div>`;
+  if (!items.length) {
+    const icon = homeTab === 'document' ? '📄' : '📭';
+    const msg  = homeTab === 'document' ? '資料がまだありません<br>上のボタンから追加しよう' : 'デッキがまだありません<br>上のボタンから追加しよう';
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon}</div><div>${msg}</div></div>`;
     return;
   }
-  el.innerHTML = decks.map(d => {
+  el.innerHTML = items.map(d => {
+    if (d.type === 'document') {
+      const meta = d.createdAt ? `追加日: ${fmtDate(d.createdAt)}` : '';
+      return `<div class="deck-card" onclick="goDocDetail('${d.id}')"><div class="deck-info"><div class="deck-name">📄 ${esc(d.name)}</div><div class="deck-meta">${meta}</div></div><div style="font-size:20px;color:var(--sub)">›</div></div>`;
+    }
     const total = d.words.length, ng = d.notMemorizedIndices;
     const ngN = ng != null ? ng.length : null;
     const badge = ng == null ? `<span class="d-badge b-new">未学習</span>`
@@ -711,6 +838,158 @@ function retryAll() {
   idx = 0; flipped = false;
   document.getElementById('round-badge').textContent = '第1ラウンド';
   showScreen('study-screen'); renderCard();
+}
+
+/* ── Doc Add ── */
+function goDocAdd() {
+  pendingDocHtml = null;
+  document.getElementById('doc-file-input').value = '';
+  document.getElementById('doc-name').value = '';
+  document.getElementById('doc-save-btn').disabled = true;
+  document.getElementById('doc-ul-count').style.display = 'none';
+  showScreen('doc-add-screen');
+}
+
+document.getElementById('doc-file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadDocFile(e.target.files[0]);
+});
+const dua = document.getElementById('doc-upload-area');
+dua.addEventListener('dragover', e => { e.preventDefault(); dua.classList.add('dragover'); });
+dua.addEventListener('dragleave', () => dua.classList.remove('dragover'));
+dua.addEventListener('drop', e => { e.preventDefault(); dua.classList.remove('dragover'); if (e.dataTransfer.files[0]) loadDocFile(e.dataTransfer.files[0]); });
+
+function loadDocFile(file) {
+  if (!file.name.toLowerCase().endsWith('.docx')) { alert('.docxファイルを選択してください'); return; }
+  const uc = document.getElementById('doc-ul-count');
+  uc.textContent = '読み込み中...'; uc.style.display = 'inline-block';
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const result = await mammoth.convertToHtml({ arrayBuffer: e.target.result });
+      if (!result.value) { alert('内容が読み込めませんでした'); uc.style.display='none'; return; }
+      pendingDocHtml = result.value;
+      const ni = document.getElementById('doc-name');
+      if (!ni.value) ni.value = file.name.replace(/\.[^.]+$/, '');
+      uc.textContent = '読み込み完了';
+      document.getElementById('doc-save-btn').disabled = false;
+    } catch { alert('ファイルの読み込みに失敗しました'); uc.style.display='none'; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function saveDoc() {
+  if (!pendingDocHtml) return;
+  const name = document.getElementById('doc-name').value.trim() || '名前なし資料';
+  const doc = {
+    id: uid(), name, type: 'document',
+    htmlContent: pendingDocHtml,
+    settings: { textColor: '#1a202c', bgColor: '#ffffff', fontSize: 16 },
+    createdAt: new Date().toISOString()
+  };
+  const all = loadDecks(); all.push(doc); saveDecks(all);
+  currentDocId = doc.id; pendingDocHtml = null;
+  goDocDetail(doc.id);
+}
+
+/* ── Doc Detail ── */
+function goDocDetail(id) {
+  currentDocId = id;
+  renderDocDetail();
+  showScreen('doc-detail-screen');
+}
+
+function renderDocDetail() {
+  const doc = loadDecks().find(d => d.id === currentDocId);
+  if (!doc) { goHome(); return; }
+  document.getElementById('doc-det-name').textContent = doc.name;
+  document.getElementById('doc-det-body').innerHTML = `
+    <div class="info-box" style="margin-bottom:16px">📄 資料を開くと文字色・サイズを変更できます</div>
+    <div class="study-btns">
+      <button class="stbtn stbtn-all" onclick="openDoc('${doc.id}')">資料を開く</button>
+    </div>
+    <button class="del-btn" onclick="delDoc()">この資料を削除</button>`;
+}
+
+function editDocName() {
+  const all = loadDecks(), doc = all.find(d => d.id === currentDocId);
+  if (!doc) return;
+  const v = prompt('資料名を変更', doc.name);
+  if (v && v.trim()) { doc.name = v.trim(); saveDecks(all); renderDocDetail(); }
+}
+
+function delDoc() {
+  const doc = loadDecks().find(d => d.id === currentDocId);
+  if (!doc || !confirm(`「${doc.name}」を削除しますか？\nこの操作は取り消せません。`)) return;
+  saveDecks(loadDecks().filter(d => d.id !== currentDocId));
+  goHome();
+}
+
+/* ── Doc View ── */
+function openDoc(id) {
+  currentDocId = id;
+  const doc = loadDecks().find(d => d.id === id);
+  if (!doc) return;
+  document.getElementById('doc-view-title').textContent = doc.name;
+  document.getElementById('doc-content').innerHTML = doc.htmlContent || '<p>内容がありません</p>';
+  applyDocSettings(doc.settings || {});
+  renderFmtPanel(doc.settings || {});
+  showScreen('doc-view-screen');
+}
+
+function applyDocSettings(s) {
+  const el = document.getElementById('doc-content');
+  el.style.setProperty('--doc-fg', s.textColor || '#1a202c');
+  el.style.setProperty('--doc-bg', s.bgColor   || '#ffffff');
+  el.style.setProperty('--doc-sz', (s.fontSize  || 16) + 'px');
+}
+
+/* ── Format panel ── */
+const FG_COLORS = ['#1a202c','#1e3a5f','#166534','#7f1d1d','#3b0764','#92400e','#fffffe','#94a1b2'];
+const BG_COLORS = ['#ffffff','#fef9ef','#eff6ff','#f0fdf4','#fff1f2','#fefce8','#f4e4c1','#1e1d2f'];
+
+function renderFmtPanel(s) {
+  const fg = s.textColor || '#1a202c';
+  const bg = s.bgColor   || '#ffffff';
+  const sz = s.fontSize  || 16;
+  document.getElementById('fmt-fg').innerHTML = FG_COLORS.map(c =>
+    `<button class="fmt-color ${c===fg?'active':''}" style="background:${c===''?'transparent':c};outline:${c==='#fffffe'?'2px solid var(--border)':'none'};" onclick="setDocFg('${c}')"></button>`
+  ).join('');
+  document.getElementById('fmt-bg').innerHTML = BG_COLORS.map(c =>
+    `<button class="fmt-color ${c===bg?'active':''}" style="background:${c};outline:${c==='#ffffff'?'2px solid var(--border)':'none'};" onclick="setDocBg('${c}')"></button>`
+  ).join('');
+  document.getElementById('fmt-sz-val').textContent = sz + 'px';
+}
+
+function saveAndApplyFmt(settings) {
+  const all = loadDecks(), doc = all.find(d => d.id === currentDocId);
+  if (!doc) return;
+  doc.settings = settings;
+  saveDecks(all);
+  applyDocSettings(settings);
+  renderFmtPanel(settings);
+}
+
+function setDocFg(c) {
+  const doc = loadDecks().find(d => d.id === currentDocId); if (!doc) return;
+  saveAndApplyFmt({ ...(doc.settings||{}), textColor: c });
+}
+function setDocBg(c) {
+  const doc = loadDecks().find(d => d.id === currentDocId); if (!doc) return;
+  saveAndApplyFmt({ ...(doc.settings||{}), bgColor: c });
+}
+function changeFontSize(delta) {
+  const doc = loadDecks().find(d => d.id === currentDocId); if (!doc) return;
+  const s = doc.settings || {}, sz = Math.min(28, Math.max(11, (s.fontSize||16) + delta));
+  saveAndApplyFmt({ ...s, fontSize: sz });
+}
+
+function openFmt() {
+  document.getElementById('fmt-ov').classList.add('open');
+  document.getElementById('fmt-panel').classList.add('open');
+}
+function closeFmt() {
+  document.getElementById('fmt-ov').classList.remove('open');
+  document.getElementById('fmt-panel').classList.remove('open');
 }
 
 /* ── Service Worker ── */
