@@ -440,7 +440,7 @@ function applyTheme(t) {
 function setTheme(t) { applyTheme(t); closeTheme(); }
 function openTheme()  { document.getElementById('t-ov').classList.add('open');    document.getElementById('t-panel').classList.add('open'); }
 function closeTheme() { document.getElementById('t-ov').classList.remove('open'); document.getElementById('t-panel').classList.remove('open'); }
-applyTheme(localStorage.getItem('tc-theme') || 'ocean');
+applyTheme(localStorage.getItem('tc-theme') || 'light');
 
 /* ── Auth panel ── */
 function openAuth() {
