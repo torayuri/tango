@@ -198,13 +198,10 @@
     .fmt-size-val{font-size:16px;font-weight:bold;color:var(--title);min-width:50px;text-align:center;}
 
     /* ── selection toolbar ── */
-    .sel-toolbar{position:fixed;z-index:600;background:var(--card-bg);border-radius:12px;padding:8px 12px;box-shadow:0 4px 24px rgba(0,0,0,.25);display:none;align-items:center;gap:8px;flex-wrap:wrap;max-width:300px;}
-    .sel-color-btn{width:30px;height:30px;border-radius:7px;border:none;background:none;font-size:17px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
-    .sel-color-btn:active{background:var(--border);}
-    .sel-divider{width:1px;height:22px;background:var(--border);flex-shrink:0;}
-    .sel-sheet-label{font-size:11px;font-weight:bold;color:var(--sub);white-space:nowrap;}
-    .sel-sheet-color{width:22px;height:22px;border-radius:5px;border:2px solid rgba(255,255,255,.3);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s;flex-shrink:0;}
-    .sel-sheet-color:active{transform:scale(.88);}
+    .sel-toolbar{position:fixed;z-index:600;background:var(--card-bg);border-radius:12px;padding:10px 14px;box-shadow:0 4px 24px rgba(0,0,0,.25);display:none;align-items:center;gap:10px;}
+    .sel-sheet-label{font-size:12px;font-weight:bold;color:var(--sub);white-space:nowrap;}
+    .sel-sheet-color{width:28px;height:28px;border-radius:6px;border:2px solid rgba(255,255,255,.35);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s;flex-shrink:0;}
+    .sel-sheet-color:active{transform:scale(.85);}
     /* ── red sheet ── */
     .red-hidden{border-radius:3px;cursor:pointer;padding:1px 3px;transition:background .25s,color .25s;display:inline;-webkit-user-select:none;user-select:none;}
     .red-hidden.revealed{background:rgba(128,128,128,.15) !important;color:inherit !important;}
@@ -377,16 +374,9 @@
   <div class="doc-content" id="doc-content"></div>
 </div>
 
-<!-- Selection toolbar (onmousedown=preventDefault keeps selection alive when tapping buttons) -->
-<div class="sel-toolbar" id="sel-toolbar" onmousedown="event.preventDefault()">
-  <button class="sel-color-btn" style="color:#ef4444" onclick="applyTextColor('#ef4444')">A</button>
-  <button class="sel-color-btn" style="color:#2193b0" onclick="applyTextColor('#2193b0')">A</button>
-  <button class="sel-color-btn" style="color:#10b981" onclick="applyTextColor('#10b981')">A</button>
-  <button class="sel-color-btn" style="color:#f59e0b" onclick="applyTextColor('#f59e0b')">A</button>
-  <button class="sel-color-btn" style="color:#8b5cf6" onclick="applyTextColor('#8b5cf6')">A</button>
-  <button class="sel-color-btn" style="color:#1a202c" onclick="applyTextColor('#1a202c')">A</button>
-  <div class="sel-divider"></div>
-  <span class="sel-sheet-label">隠す</span>
+<!-- Selection toolbar -->
+<div class="sel-toolbar" id="sel-toolbar" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()">
+  <span class="sel-sheet-label">隠す色</span>
   <button class="sel-sheet-color" style="background:#2d3748" onclick="applyRedSheet('#2d3748')"></button>
   <button class="sel-sheet-color" style="background:#c9184a" onclick="applyRedSheet('#c9184a')"></button>
   <button class="sel-sheet-color" style="background:#1e3a8a" onclick="applyRedSheet('#1e3a8a')"></button>
@@ -1095,9 +1085,6 @@ function wrapSavedRange(className, style) {
   return true;
 }
 
-function applyTextColor(color) {
-  if (wrapSavedRange('', `color:${color}`)) { saveDocContent(); hideSelToolbar(); }
-}
 function applyRedSheet(color) {
   const c = color || '#2d3748';
   if (wrapSavedRange('red-hidden', `background:${c};color:${c};`)) { saveDocContent(); hideSelToolbar(); }
