@@ -1,0 +1,18 @@
+{
+  "name": "暗記カードアプリ",
+  "short_name": "暗記カード",
+  "description": "単語帳・暗記カードアプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e8f6f8",
+  "theme_color": "#2193b0",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
