@@ -196,6 +196,18 @@
     .fmt-size-row{display:flex;align-items:center;gap:16px;}
     .fmt-size-btn{width:40px;height:40px;border-radius:50%;border:2px solid var(--border);background:var(--card-bg);color:var(--title);font-size:22px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
     .fmt-size-val{font-size:16px;font-weight:bold;color:var(--title);min-width:50px;text-align:center;}
+
+    /* ── selection toolbar ── */
+    .sel-toolbar{position:fixed;z-index:600;background:var(--card-bg);border-radius:12px;padding:8px 12px;box-shadow:0 4px 24px rgba(0,0,0,.25);display:none;align-items:center;gap:8px;flex-wrap:wrap;max-width:300px;}
+    .sel-color-btn{width:30px;height:30px;border-radius:7px;border:none;background:none;font-size:17px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
+    .sel-color-btn:active{background:var(--border);}
+    .sel-divider{width:1px;height:22px;background:var(--border);flex-shrink:0;}
+    .sel-sheet-label{font-size:11px;font-weight:bold;color:var(--sub);white-space:nowrap;}
+    .sel-sheet-color{width:22px;height:22px;border-radius:5px;border:2px solid rgba(255,255,255,.3);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s;flex-shrink:0;}
+    .sel-sheet-color:active{transform:scale(.88);}
+    /* ── red sheet ── */
+    .red-hidden{border-radius:3px;cursor:pointer;padding:1px 3px;transition:background .25s,color .25s;display:inline;-webkit-user-select:none;user-select:none;}
+    .red-hidden.revealed{background:rgba(128,128,128,.15) !important;color:inherit !important;}
   </style>
 </head>
 <body>
@@ -363,6 +375,23 @@
     <span class="s-title" id="doc-view-title"></span>
   </div>
   <div class="doc-content" id="doc-content"></div>
+</div>
+
+<!-- Selection toolbar -->
+<div class="sel-toolbar" id="sel-toolbar">
+  <button class="sel-color-btn" style="color:#ef4444" onclick="applyTextColor('#ef4444')">A</button>
+  <button class="sel-color-btn" style="color:#2193b0" onclick="applyTextColor('#2193b0')">A</button>
+  <button class="sel-color-btn" style="color:#10b981" onclick="applyTextColor('#10b981')">A</button>
+  <button class="sel-color-btn" style="color:#f59e0b" onclick="applyTextColor('#f59e0b')">A</button>
+  <button class="sel-color-btn" style="color:#8b5cf6" onclick="applyTextColor('#8b5cf6')">A</button>
+  <button class="sel-color-btn" style="color:#1a202c" onclick="applyTextColor('#1a202c')">A</button>
+  <div class="sel-divider"></div>
+  <span class="sel-sheet-label">隠す</span>
+  <button class="sel-sheet-color" style="background:#2d3748" onclick="applyRedSheet('#2d3748')"></button>
+  <button class="sel-sheet-color" style="background:#c9184a" onclick="applyRedSheet('#c9184a')"></button>
+  <button class="sel-sheet-color" style="background:#1e3a8a" onclick="applyRedSheet('#1e3a8a')"></button>
+  <button class="sel-sheet-color" style="background:#166534" onclick="applyRedSheet('#166534')"></button>
+  <button class="sel-sheet-color" style="background:#92400e" onclick="applyRedSheet('#92400e')"></button>
 </div>
 
 <!-- Format FAB -->
@@ -990,6 +1019,80 @@ function openFmt() {
 function closeFmt() {
   document.getElementById('fmt-ov').classList.remove('open');
   document.getElementById('fmt-panel').classList.remove('open');
+}
+
+/* ── Selection toolbar ── */
+(function() {
+  function onDocSel() {
+    if (!document.getElementById('doc-view-screen').classList.contains('active')) return;
+    setTimeout(() => {
+      const sel = window.getSelection();
+      const container = document.getElementById('doc-content');
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { hideSelToolbar(); return; }
+      const range = sel.getRangeAt(0);
+      if (!container.contains(range.commonAncestorContainer)) { hideSelToolbar(); return; }
+      showSelToolbar(range.getBoundingClientRect());
+    }, 60);
+  }
+  document.getElementById('doc-content').addEventListener('mouseup', onDocSel);
+  document.getElementById('doc-content').addEventListener('touchend', onDocSel);
+  document.getElementById('doc-content').addEventListener('click', e => {
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const t = e.target.closest('.red-hidden');
+    if (t) t.classList.toggle('revealed');
+  });
+  document.addEventListener('mousedown', e => {
+    if (!e.target.closest('#sel-toolbar') && !e.target.closest('#doc-content')) hideSelToolbar();
+  });
+})();
+
+function showSelToolbar(rect) {
+  const tb = document.getElementById('sel-toolbar');
+  tb.style.display = 'flex';
+  const tbW = tb.offsetWidth || 260, tbH = tb.offsetHeight || 48;
+  let top = rect.top + window.scrollY - tbH - 10;
+  if (top < 60) top = rect.bottom + window.scrollY + 10;
+  let left = rect.left + window.scrollX + rect.width / 2 - tbW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tbW - 8));
+  tb.style.top = top + 'px';
+  tb.style.left = left + 'px';
+}
+function hideSelToolbar() {
+  document.getElementById('sel-toolbar').style.display = 'none';
+}
+
+function wrapSelection(className, style) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+  const range = sel.getRangeAt(0);
+  if (!document.getElementById('doc-content').contains(range.commonAncestorContainer)) return false;
+  const span = document.createElement('span');
+  if (className) span.className = className;
+  if (style) span.setAttribute('style', style);
+  try {
+    range.surroundContents(span);
+  } catch {
+    const frag = range.extractContents();
+    span.appendChild(frag);
+    range.insertNode(span);
+  }
+  sel.removeAllRanges();
+  return true;
+}
+
+function applyTextColor(color) {
+  if (wrapSelection('', `color:${color}`)) { saveDocContent(); hideSelToolbar(); }
+}
+function applyRedSheet(color) {
+  const c = color || '#2d3748';
+  if (wrapSelection('red-hidden', `background:${c};color:${c};`)) { saveDocContent(); hideSelToolbar(); }
+}
+function saveDocContent() {
+  const all = loadDecks(), doc = all.find(d => d.id === currentDocId);
+  if (!doc) return;
+  doc.htmlContent = document.getElementById('doc-content').innerHTML;
+  saveDecks(all);
 }
 
 /* ── Service Worker ── */
