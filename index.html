@@ -575,13 +575,14 @@ async function notifyArrival(x){
 function notifyCard(){
   if (!('Notification' in window)) return '';
   if (Notification.permission === 'granted') return PUSH_ON
-    ? `<div class="note">🔔 通知：オン（アプリを閉じていても届きます）</div>`
+    ? `<div class="note">🔔 通知：オン（アプリを閉じていても届きます）${pushStatus === 'ok' ? ' ✅登録済み' : pushStatus ? '<br>⚠️ 登録できませんでした（' + esc(pushStatus) + '）' : '<br>登録中…'}</div>`
     : `<div class="note">🔔 通知：オン（アプリを開いている間・バックグラウンドの間に届きます）</div>`;
   if (Notification.permission === 'denied') return `<div class="note">🔕 通知はブラウザの設定でブロックされています</div>`;
   return `<button class="ghost" id="btn-notify">🔔 届いたら通知する</button>`;
 }
 
 /* ── Web Push の登録と送信 ── */
+let pushStatus = '';
 async function syncPush(){
   if (!PUSH_ON || !me || Notification.permission !== 'granted') return;
   try {
@@ -594,11 +595,13 @@ async function syncPush(){
     const mine = JSON.stringify(sub.toJSON());
     const ref = db.collection('users').doc(me.uid);
     const cur = ((await ref.get()).data()?.pushSubs || []);
-    if (cur.includes(mine)) return;
+    if (cur.includes(mine)) { pushStatus = 'ok'; renderMe(); return; }
     const endpoint = sub.endpoint;
     const next = [mine, ...cur.filter(x => { try { return JSON.parse(x).endpoint !== endpoint; } catch { return false; } })].slice(0, 5);
     await ref.set({ pushSubs: next }, { merge:true });
-  } catch (e) { console.error('push subscribe failed', e); }
+    pushStatus = 'ok';
+  } catch (e) { console.error('push subscribe failed', e); pushStatus = 'エラー: ' + (e && (e.name + ' ' + e.message)); }
+  renderMe();
 }
 async function pingPush(toUid){
   if (!PUSH_URL || !me) return;
