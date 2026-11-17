@@ -10,7 +10,6 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const VAPID_PRIVATE_JWK = null; // ← ここに秘密鍵（{"kty":"EC",...}）を貼る
 const VAPID_SUBJECT = 'https://torayuri.github.io/tango/';
-const FIREBASE_API_KEY = 'AIzaSyBajglgEdUCfeZcv6NLLW1e199wKw5MMow';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/oekaki-letter/databases/(default)/documents';
 const APP_URL = 'https://torayuri.github.io/tango/index.html#inbox';
 
@@ -72,12 +71,16 @@ async function sendPush(sub, payload, jwk) {
 }
 
 /* ── Firebase ── */
-async function verifyIdToken(idToken) {
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
-  });
-  if (!r.ok) return null;
-  return (await r.json()).users?.[0]?.localId || null;
+// IDトークンから送り主の uid を取り出す。
+// トークン自体が本物かどうかは、このトークンで Firestore を読めるかで確かめる
+// （偽物なら Firestore が拒否し、送り主のなまえが取れずに 403 になる）。
+function uidFromIdToken(idToken) {
+  try {
+    const p = JSON.parse(new TextDecoder().decode(unb64u(idToken.split('.')[1])));
+    if (p.aud !== 'oekaki-letter' || p.iss !== 'https://securetoken.google.com/oekaki-letter') return null;
+    if (!(p.exp > Date.now() / 1000)) return null;
+    return typeof p.user_id === 'string' ? p.user_id : null;
+  } catch { return null; }
 }
 async function getUser(uid, idToken) {
   const r = await fetch(`${FIRESTORE}/users/${encodeURIComponent(uid)}`, { headers: { Authorization: `Bearer ${idToken}` } });
@@ -102,7 +105,7 @@ export default {
     if (typeof idToken !== 'string' || typeof to !== 'string' || to.length > 128) return reply(400, { error: 'bad request' });
 
     // 送った人が本物のユーザーか確認し、なまえは Firestore から取る（なりすまし防止）
-    const fromUid = await verifyIdToken(idToken);
+    const fromUid = uidFromIdToken(idToken);
     if (!fromUid) return reply(401, { error: 'unauthorized' });
     const [from, target] = await Promise.all([getUser(fromUid, idToken), getUser(to, idToken)]);
     if (!from?.name) return reply(403, { error: 'sender has no name' });
