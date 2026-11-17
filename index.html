@@ -371,14 +371,7 @@ function drawSeg(g, op, i, tail = false){
       curve(g, p, i, tail);
       break;
     }
-    case 'neon':
-      g.strokeStyle = g.fillStyle = col; g.lineWidth = s;
-      g.shadowColor = col; g.shadowBlur = s * 1.6;
-      lineOrDot(s / 2);
-      g.shadowBlur = s * .4;
-      g.strokeStyle = g.fillStyle = 'rgba(255,255,255,.85)'; g.lineWidth = s * .35;
-      lineOrDot(s * .18);
-      break;
+    case 'neon': break;   // ネオンは renderNeon で線全体を一度に描く
     case 'chalk': {
       if (tail) break;
       const r = rngFor(op.seed, i), per = Math.max(4, Math.round(s * .9));
@@ -429,7 +422,32 @@ function drawSeg(g, op, i, tail = false){
   g.restore();
 }
 
+// 線全体を1本のパスにする（区間ごとに描くと光や芯が重なってブツブツになるため）
+function fullPath(g, p){
+  g.beginPath(); g.moveTo(p[0][0], p[0][1]);
+  for (let i = 1; i < p.length; i++) {
+    const b = p[i - 1], c = p[i];
+    g.quadraticCurveTo(b[0], b[1], (b[0] + c[0]) / 2, (b[1] + c[1]) / 2);
+  }
+  const l = p[p.length - 1]; g.lineTo(l[0], l[1]);
+}
+function renderNeon(g, op){
+  const s = op.size, q = op.pts;
+  const p = q.length === 1 ? [q[0], [q[0][0] + .1, q[0][1]]] : q;   // 点だけでも光るように
+  g.save();
+  g.lineCap = g.lineJoin = 'round';
+  // 外側の光
+  fullPath(g, p);
+  g.strokeStyle = op.color; g.lineWidth = s; g.shadowColor = op.color; g.shadowBlur = s * 1.6;
+  g.stroke(); g.stroke();
+  // 白っぽい芯
+  g.shadowBlur = s * .3; g.shadowColor = '#fff';
+  g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = s * .35;
+  g.stroke();
+  g.restore();
+}
 function renderStroke(g, op){
+  if (op.tool === 'neon') { renderNeon(g, op); return; }
   for (let i = 0; i < op.pts.length; i++) drawSeg(g, op, i);
   if (LINE_TOOLS.has(op.tool)) drawSeg(g, op, op.pts.length - 1, true);
 }
@@ -500,6 +518,10 @@ function toPt(e){
           Math.round((e.clientY - r.top) / r.height * SIZE * 10) / 10];
 }
 const liveTarget = op => op.tool === 'eraser' ? ctx : lctx;
+function drawLive(op, i){
+  if (op.tool === 'neon') { lctx.clearRect(0, 0, SIZE, SIZE); renderNeon(lctx, op); return; }
+  drawSeg(liveTarget(op), op, i);
+}
 live.addEventListener('pointerdown', e => {
   if (cur) return;
   e.preventDefault();
@@ -511,7 +533,7 @@ live.addEventListener('pointerdown', e => {
   cur = { t:'s', tool, color, size:s, seed:(Math.random() * 2 ** 31) | 0, pts:[p], id:e.pointerId, lt:e.timeStamp };
   lctx.clearRect(0, 0, SIZE, SIZE);
   live.style.opacity = BR[tool].alpha || 1;
-  drawSeg(liveTarget(cur), cur, 0);
+  drawLive(cur, 0);
 });
 live.addEventListener('pointermove', e => {
   if (!cur || e.pointerId !== cur.id) return;
@@ -528,8 +550,9 @@ live.addEventListener('pointermove', e => {
     }
     cur.lt = ev.timeStamp;
     cur.pts.push(p);
-    drawSeg(liveTarget(cur), cur, cur.pts.length - 1);
+    if (cur.tool !== 'neon') drawLive(cur, cur.pts.length - 1);
   }
+  if (cur.tool === 'neon') drawLive(cur);
 });
 function endStroke(e){
   if (!cur || e.pointerId !== cur.id) return;
