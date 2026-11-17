@@ -445,7 +445,7 @@ const FB_ON = !!FB_CONFIG.apiKey;
 
 /* ── アプリを閉じていても届く通知（Web Push） ──
    PUSH_URL: Cloudflare Workers に置いた通知サーバー（push-worker.js）のURL */
-const PUSH_URL = '';
+const PUSH_URL = 'https://oekaki-push.torayuri-candy.workers.dev';
 const VAPID_PUBLIC = 'BBO22dN0mNjobBoX378uA5nEZvT_veK0NxzHdNQK9MLVwfn80ntMyvxS50GHm2S8UGkXFi7hThJKO4N_C4yQRdM';
 const PUSH_ON = !!PUSH_URL && 'serviceWorker' in navigator && 'PushManager' in window;
 let auth = null, db = null, me = null, myName = null, inbox = [], unsubInbox = null;
