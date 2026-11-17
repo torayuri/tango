@@ -46,7 +46,17 @@
     .board{position:relative;width:100%;aspect-ratio:1/1;border-radius:20px;overflow:hidden;box-shadow:var(--shadow);background:#fff;touch-action:none;}
     .board canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;pointer-events:none;}
     .board #cv-live{pointer-events:auto;}
-    .brushes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+    .brushes{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
+    .tool-opts{display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:14px;background:var(--bg);}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;}
+    .chip{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border-radius:10px;background:var(--card);font-size:12px;font-weight:700;color:var(--sub);border:2px solid transparent;}
+    .chip canvas{width:22px;height:22px;}
+    .chip.on{border-color:var(--accent);color:var(--ink);}
+    .text-modal{text-align:left;}
+    .text-modal .chip{font-size:15px;padding:8px 12px;}
+    .checks{gap:18px;font-size:14px;font-weight:600;}
+    .checks input{accent-color:var(--accent);width:18px;height:18px;vertical-align:-3px;}
+    .tx-btns{gap:8px;}
     .brush{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 4px 6px;border-radius:12px;background:var(--bg);font-size:12px;font-weight:700;color:var(--sub);border:2px solid transparent;}
     .brush canvas{width:100%;max-width:64px;height:24px;border-radius:6px;}
     .brush.on{border-color:var(--accent);color:var(--ink);background:var(--card);}
@@ -135,6 +145,7 @@
 
   <div class="tools">
     <div class="brushes" id="brushes"></div>
+    <div class="tool-opts" id="tool-opts" style="display:none"></div>
     <div class="row between">
       <span class="label">色</span>
       <button class="link" id="btn-pal-edit">パレットを編集</button>
@@ -193,6 +204,25 @@
   <div class="card" id="me-card"></div>
   <div class="list" id="inbox-list"></div>
 </section>
+
+<div class="modal-bg" id="text-modal">
+  <div class="modal text-modal">
+    <div class="h2">文字を入れる</div>
+    <textarea id="tx-text" rows="3" maxlength="200" placeholder="ここに文字を入力"></textarea>
+    <div class="chips" id="tx-fonts"></div>
+    <div class="row"><span class="label">大きさ</span><input type="range" id="tx-size" min="12" max="90" value="28"></div>
+    <div class="row checks">
+      <label><input type="checkbox" id="tx-bold" checked> 太字</label>
+      <label><input type="checkbox" id="tx-outline"> ふちどり</label>
+    </div>
+    <div class="row tx-btns">
+      <button class="link" id="tx-del" style="color:#d33">削除</button>
+      <span style="flex:1"></span>
+      <button class="ghost" id="tx-cancel" style="width:auto;padding:11px 16px">やめる</button>
+      <button class="primary" id="tx-ok" style="width:auto;padding:11px 22px;font-size:15px">決定</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-bg" id="sent-modal">
   <div class="modal">
@@ -283,7 +313,17 @@ const BR = {
   spray:  { name:'スプレー', alpha:0 },
   neon:   { name:'ネオン',   alpha:0 },
   eraser: { name:'消しゴム', alpha:0 },
+  shape:  { name:'図形',     alpha:0 },
+  text:   { name:'文字',     alpha:0 },
 };
+const SHAPES = { rect:'四角', ellipse:'丸', tri:'三角', star:'星', heart:'ハート', line:'線', arrow:'矢印' };
+const FONTS = {
+  gothic: { name:'ゴシック', stack:'"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif' },
+  mincho: { name:'明朝',     stack:'"Hiragino Mincho ProN","Noto Serif JP","Yu Mincho",serif' },
+  hand:   { name:'てがき',   gf:'Yomogi' },
+  pop:    { name:'ポップ',   gf:'RocknRoll One' },
+};
+let shapeKind = 'rect', shapeFill = false;
 const LINE_TOOLS = new Set(['pen','eraser','water','neon','brush']);
 
 const bgCv = $('#cv-bg'), cv = $('#cv-layer'), live = $('#cv-live');
@@ -455,6 +495,8 @@ function renderStroke(g, op){
 const scratch = document.createElement('canvas');
 function commitOp(g, op, w = SIZE, h = SIZE){
   if (op.t === 'c') { g.clearRect(0, 0, w, h); return; }
+  if (op.t === 'shape') { renderShape(g, op); return; }
+  if (op.t === 'text') { renderText(g, op); return; }
   const alpha = BR[op.tool]?.alpha;
   if (!alpha) { renderStroke(g, op); return; }
   if (scratch.width !== w || scratch.height !== h) { scratch.width = w; scratch.height = h; }
@@ -462,6 +504,112 @@ function commitOp(g, op, w = SIZE, h = SIZE){
   sg.clearRect(0, 0, w, h);
   renderStroke(sg, op);
   g.save(); g.globalAlpha = alpha; g.drawImage(scratch, 0, 0); g.restore();
+}
+
+/* ── 図形 ── */
+function shapePath(g, op){
+  const { x1, y1, x2, y2 } = op;
+  const l = Math.min(x1, x2), t = Math.min(y1, y2), w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+  const cx = l + w / 2, cy = t + h / 2;
+  g.beginPath();
+  switch (op.kind) {
+    case 'ellipse': g.ellipse(cx, cy, Math.max(.5, w / 2), Math.max(.5, h / 2), 0, 0, Math.PI * 2); break;
+    case 'tri': g.moveTo(cx, t); g.lineTo(l + w, t + h); g.lineTo(l, t + h); g.closePath(); break;
+    case 'star':
+      for (let k = 0; k < 10; k++) {
+        const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? .42 : 1;
+        g.lineTo(cx + Math.cos(a) * w / 2 * r, cy + Math.sin(a) * h / 2 * r + h * .05);
+      }
+      g.closePath(); break;
+    case 'heart':
+      g.moveTo(cx, t + h * .28);
+      g.bezierCurveTo(cx, t, l, t, l, t + h * .32);
+      g.bezierCurveTo(l, t + h * .62, cx - w * .1, t + h * .78, cx, t + h);
+      g.bezierCurveTo(cx + w * .1, t + h * .78, l + w, t + h * .62, l + w, t + h * .32);
+      g.bezierCurveTo(l + w, t, cx, t, cx, t + h * .28);
+      g.closePath(); break;
+    case 'line': case 'arrow': g.moveTo(x1, y1); g.lineTo(x2, y2); break;
+    default: g.rect(l, t, w, h);
+  }
+}
+function renderShape(g, op){
+  g.save();
+  g.lineCap = g.lineJoin = 'round';
+  g.strokeStyle = g.fillStyle = op.color; g.lineWidth = op.size;
+  shapePath(g, op);
+  const open = op.kind === 'line' || op.kind === 'arrow';
+  if (op.fill && !open) g.fill(); else g.stroke();
+  if (op.kind === 'arrow') {
+    const a = Math.atan2(op.y2 - op.y1, op.x2 - op.x1);
+    const len = Math.hypot(op.x2 - op.x1, op.y2 - op.y1);
+    const hs = Math.min(len * .45, Math.max(op.size * 3, 24));
+    g.beginPath();
+    g.moveTo(op.x2 - Math.cos(a - .5) * hs, op.y2 - Math.sin(a - .5) * hs);
+    g.lineTo(op.x2, op.y2);
+    g.lineTo(op.x2 - Math.cos(a + .5) * hs, op.y2 - Math.sin(a + .5) * hs);
+    g.stroke();
+  }
+  g.restore();
+}
+
+/* ── 文字 ── */
+const fontChars = {};   // Webフォントごとに読み込み済みの文字
+async function ensureFont(key, text){
+  const f = FONTS[key];
+  if (!f?.gf) return;
+  const have = fontChars[key] || (fontChars[key] = new Set());
+  const need = [...new Set([...text])].filter(c => !have.has(c) && c.trim());
+  if (!need.length) return;
+  try {
+    const css = await (await fetch(`https://fonts.googleapis.com/css2?family=${encodeURIComponent(f.gf)}&text=${encodeURIComponent(need.join(''))}`)).text();
+    const url = css.match(/url\((https:[^)]+)\)/)?.[1];
+    if (!url) return;
+    const range = need.map(c => 'U+' + c.codePointAt(0).toString(16)).join(',');
+    const face = new FontFace('gf-' + key, `url(${url})`, { unicodeRange: range });
+    await face.load();
+    document.fonts.add(face);
+    need.forEach(c => have.add(c));
+  } catch (e) { console.warn('font load failed', e); }
+}
+const fontStack = key => FONTS[key]?.gf ? `"gf-${key}",${FONTS.gothic.stack}` : (FONTS[key] || FONTS.gothic).stack;
+function textLayout(g, op){
+  g.font = `${op.bold ? 'bold ' : ''}${op.px}px ${fontStack(op.font)}`;
+  const lines = String(op.text).split('\n');
+  const lh = op.px * 1.25;
+  const w = Math.max(...lines.map(t => g.measureText(t).width));
+  return { lines, lh, w, h: lh * lines.length };
+}
+function renderText(g, op){
+  g.save();
+  const { lines, lh } = textLayout(g, op);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const y0 = op.y - (lines.length - 1) * lh / 2;
+  if (op.outline) {
+    g.strokeStyle = isLight(op.color) ? '#2b2622' : '#ffffff';
+    g.lineWidth = op.px * .18;
+    lines.forEach((t, k) => g.strokeText(t, op.x, y0 + k * lh));
+  }
+  g.fillStyle = op.color;
+  lines.forEach((t, k) => g.fillText(t, op.x, y0 + k * lh));
+  g.restore();
+}
+function textHit(p){
+  for (let i = ops.length - 1; i >= 0; i--) {
+    const op = ops[i];
+    if (op.t === 'c') return -1;   // 「ぜんぶ消す」より前のものは見えないので対象外
+    if (op.t !== 'text') continue;
+    const { w, h } = textLayout(ctx, op), pad = 24;
+    if (Math.abs(p[0] - op.x) <= w / 2 + pad && Math.abs(p[1] - op.y) <= h / 2 + pad) return i;
+  }
+  return -1;
+}
+async function loadAllFonts(){
+  const texts = {};
+  ops.forEach(op => { if (op.t === 'text' && FONTS[op.font]?.gf) texts[op.font] = (texts[op.font] || '') + op.text; });
+  const keys = Object.keys(texts);
+  if (!keys.length) return;
+  await Promise.all(keys.map(k => ensureFont(k, texts[k])));
+  redraw();
 }
 
 /* ── 背景 ── */
@@ -522,13 +670,31 @@ function drawLive(op, i){
   if (op.tool === 'neon') { lctx.clearRect(0, 0, SIZE, SIZE); renderNeon(lctx, op); return; }
   drawSeg(liveTarget(op), op, i);
 }
+let drag = null;   // 文字を動かしているとき
+function redrawExcept(idx){
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  ops.forEach((op, i) => { if (i !== idx) commitOp(ctx, op); });
+}
 live.addEventListener('pointerdown', e => {
-  if (cur) return;
+  if (cur || drag) return;
   e.preventDefault();
   live.setPointerCapture(e.pointerId);
   const scale = SIZE / live.getBoundingClientRect().width;
   const s = Math.round(size * scale * (tool === 'eraser' ? 2 : 1));
   const p = toPt(e);
+  if (tool === 'text') {
+    const idx = textHit(p);
+    if (idx < 0) { openTextEditor(null, p); return; }
+    drag = { idx, op: ops[idx], sx: p[0], sy: p[1], ox: ops[idx].x, oy: ops[idx].y, moved: false, id: e.pointerId };
+    redrawExcept(idx);
+    lctx.clearRect(0, 0, SIZE, SIZE); renderText(lctx, drag.op);
+    return;
+  }
+  if (tool === 'shape') {
+    cur = { t:'shape', kind:shapeKind, fill:shapeFill, color, size:s, x1:p[0], y1:p[1], x2:p[0], y2:p[1], id:e.pointerId };
+    lctx.clearRect(0, 0, SIZE, SIZE);
+    return;
+  }
   if (tool === 'brush') p[2] = Math.round(s * 3.5) / 10;
   cur = { t:'s', tool, color, size:s, seed:(Math.random() * 2 ** 31) | 0, pts:[p], id:e.pointerId, lt:e.timeStamp };
   lctx.clearRect(0, 0, SIZE, SIZE);
@@ -536,7 +702,21 @@ live.addEventListener('pointerdown', e => {
   drawLive(cur, 0);
 });
 live.addEventListener('pointermove', e => {
+  if (drag && e.pointerId === drag.id) {
+    const p = toPt(e), dx = p[0] - drag.sx, dy = p[1] - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) < 12) return;
+    drag.moved = true;
+    drag.op.x = Math.round(drag.ox + dx); drag.op.y = Math.round(drag.oy + dy);
+    lctx.clearRect(0, 0, SIZE, SIZE); renderText(lctx, drag.op);
+    return;
+  }
   if (!cur || e.pointerId !== cur.id) return;
+  if (cur.t === 'shape') {
+    const p = toPt(e);
+    cur.x2 = p[0]; cur.y2 = p[1];
+    lctx.clearRect(0, 0, SIZE, SIZE); renderShape(lctx, cur);
+    return;
+  }
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
   for (const ev of (evs.length ? evs : [e])) {
     const p = toPt(ev), last = cur.pts[cur.pts.length - 1];
@@ -555,8 +735,23 @@ live.addEventListener('pointermove', e => {
   if (cur.tool === 'neon') drawLive(cur);
 });
 function endStroke(e){
+  if (drag && e.pointerId === drag.id) {
+    const d = drag; drag = null;
+    lctx.clearRect(0, 0, SIZE, SIZE);
+    redraw(); persist();
+    if (!d.moved && e.type === 'pointerup') openTextEditor(d.idx);
+    return;
+  }
   if (!cur || e.pointerId !== cur.id) return;
   const op = cur; cur = null; delete op.id; delete op.lt;
+  if (op.t === 'shape') {
+    lctx.clearRect(0, 0, SIZE, SIZE);
+    if (Math.hypot(op.x2 - op.x1, op.y2 - op.y1) < 10) { toast('ドラッグして図形をかいてね'); return; }
+    commitOp(ctx, op);
+    ops.push(op); redo = [];
+    updateUndo(); persist();
+    return;
+  }
   if (op.tool === 'brush') {
     // 筆の払い：最後に向かって細くする
     const n = op.pts.length, k = Math.min(8, n - 1);
@@ -601,6 +796,14 @@ function drawBrushSample(c, id){
   const dark = id !== 'eraser' && isLight(color);
   g.fillStyle = dark ? '#4a4540' : (id === 'neon' ? '#221d2e' : '#fff');
   g.fillRect(0, 0, W, H);
+  if (id === 'shape') {
+    renderShape(g, { kind:'star', fill:false, color, size:3, x1:W / 2 - 22, y1:4, x2:W / 2 + 22, y2:H - 4 });
+    return;
+  }
+  if (id === 'text') {
+    renderText(g, { text:'Aあ', x:W / 2, y:H / 2 + 1, px:30, font:'gothic', bold:true, color, outline:false });
+    return;
+  }
   if (id === 'eraser') {
     g.fillStyle = '#c9c2bb'; g.fillRect(10, 18, W - 20, 12);
     g.clearRect(30, 14, 50, 20); g.fillStyle = '#fff'; g.fillRect(30, 14, 50, 20);
@@ -617,7 +820,73 @@ function setTool(id){
   tool = id;
   if (id !== 'eraser') lastBrush = id;
   document.querySelectorAll('#brushes .brush').forEach(x => x.classList.toggle('on', x.dataset.tool === id));
-  updateSizeDot();
+  renderToolOpts(); updateSizeDot();
+}
+function renderToolOpts(){
+  const box = $('#tool-opts');
+  if (tool === 'shape') {
+    box.innerHTML = `<div class="chips">${Object.entries(SHAPES).map(([k, n]) =>
+        `<button class="chip${k === shapeKind ? ' on' : ''}" data-kind="${k}"><canvas width="44" height="44"></canvas>${n}</button>`).join('')}</div>
+      <div class="seg" id="fill-seg">
+        <button data-fill="0" class="${shapeFill ? '' : 'on'}">枠だけ</button>
+        <button data-fill="1" class="${shapeFill ? 'on' : ''}">塗りつぶし</button>
+      </div>`;
+    box.querySelectorAll('[data-kind]').forEach(b => {
+      const c = b.querySelector('canvas'), g = c.getContext('2d');
+      const open = b.dataset.kind === 'line' || b.dataset.kind === 'arrow';
+      renderShape(g, { kind:b.dataset.kind, fill:shapeFill && !open, color: isLight(color) ? '#8a7f77' : color, size:3, x1:open ? 8 : 6, y1:open ? 36 : 6, x2:open ? 36 : 38, y2:open ? 8 : 38 });
+      b.onclick = () => { shapeKind = b.dataset.kind; renderToolOpts(); };
+    });
+    box.querySelectorAll('[data-fill]').forEach(b => b.onclick = () => { shapeFill = b.dataset.fill === '1'; renderToolOpts(); });
+    box.style.display = '';
+  } else if (tool === 'text') {
+    box.innerHTML = `<div class="note">キャンバスをタップすると文字を入れられます。置いた文字は<b>ドラッグで移動</b>、<b>タップで編集</b>できます。</div>`;
+    box.style.display = '';
+  } else {
+    box.innerHTML = ''; box.style.display = 'none';
+  }
+}
+
+/* ── 文字の入力画面 ── */
+let textDraft = { font:'gothic', px:0, bold:true, outline:false };
+function openTextEditor(idx, p){
+  const editing = idx != null ? ops[idx] : null;
+  const scale = SIZE / live.getBoundingClientRect().width;
+  const d = editing ? { ...editing } : { ...textDraft, text:'', px: textDraft.px || Math.round(28 * scale) };
+  const m = $('#text-modal');
+  $('#tx-text').value = d.text;
+  $('#tx-size').value = Math.round(d.px / scale);
+  $('#tx-bold').checked = !!d.bold;
+  $('#tx-outline').checked = !!d.outline;
+  $('#tx-del').style.display = editing ? '' : 'none';
+  let font = d.font;
+  const fontsBox = $('#tx-fonts');
+  fontsBox.innerHTML = Object.entries(FONTS).map(([k, f]) => `<button class="chip${k === font ? ' on' : ''}" data-font="${k}" style="font-family:${fontStack(k).replace(/"/g, "'")}">${f.name}</button>`).join('');
+  fontsBox.querySelectorAll('[data-font]').forEach(b => b.onclick = () => {
+    font = b.dataset.font;
+    fontsBox.querySelectorAll('[data-font]').forEach(x => x.classList.toggle('on', x === b));
+  });
+  Object.entries(FONTS).forEach(([k, f]) => { if (f.gf) ensureFont(k, f.name); });
+  m.classList.add('on');
+  setTimeout(() => $('#tx-text').focus(), 50);
+  const close = () => m.classList.remove('on');
+  $('#tx-cancel').onclick = close;
+  $('#tx-del').onclick = () => {
+    if (!editing) return;
+    ops.splice(idx, 1); redraw(); persist(); close();
+  };
+  $('#tx-ok').onclick = async () => {
+    const text = $('#tx-text').value.replace(/\s+$/, '');
+    if (!text) { close(); return; }
+    const px = Math.round(+$('#tx-size').value * scale);
+    const props = { text, font, px, bold: $('#tx-bold').checked, outline: $('#tx-outline').checked, color: editing ? editing.color : color };
+    textDraft = { font, px, bold: props.bold, outline: props.outline };
+    close();
+    await ensureFont(font, text);
+    if (editing) Object.assign(editing, props);
+    else { ops.push({ t:'text', x: Math.round(p[0]), y: Math.round(p[1]), ...props }); redo = []; }
+    redraw(); persist();
+  };
 }
 
 /* ── カラーパレット（編集できる） ── */
@@ -652,7 +921,7 @@ $('#btn-pal-edit').onclick = () => { palEdit = !palEdit; renderColors(); };
 function setColor(c){
   color = c;
   if (tool === 'eraser') setTool(lastBrush);
-  renderColors(); updateSizeDot(); renderBrushes();
+  renderColors(); updateSizeDot(); renderBrushes(); renderToolOpts();
 }
 
 /* ── 背景の選択 ── */
@@ -686,9 +955,10 @@ function updateSizeDot(){
 }
 $('#size').oninput = e => { size = +e.target.value; updateSizeDot(); };
 
-renderBrushes(); renderColors(); updateSizeDot();
+renderBrushes(); renderColors(); renderToolOpts(); updateSizeDot();
 setBase(base);   // 背景の描画も兼ねる
 redraw();
+loadAllFonts();
 
 /* ━━━━━━━━━━ 書き出し ━━━━━━━━━━ */
 function exportCanvas(px){
