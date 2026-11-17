@@ -1,4 +1,4 @@
-const CACHE = 'oekaki-v2';
+const CACHE = 'oekaki-v3';
 const CDN_URLS = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
@@ -46,5 +46,19 @@ self.addEventListener('fetch', e => {
       if (res && res.ok) { const c = res.clone(); caches.open(CACHE).then(x => x.put(req, c)); }
       return res;
     }))
+  );
+});
+
+// 通知をタップしたらアプリの受信箱を開く
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './index.html#inbox';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ('focus' in c) { c.navigate(url).catch(() => {}); return c.focus(); }
+      }
+      return self.clients.openWindow(url);
+    })
   );
 });

@@ -93,6 +93,11 @@
     .item .acts button{font-size:13px;font-weight:700;padding:7px 12px;border-radius:10px;background:var(--bg);}
     .empty{text-align:center;color:var(--sub);padding:48px 0;font-size:14px;}
 
+    .modal-bg{display:none;position:fixed;inset:0;background:rgba(30,20,10,.45);z-index:500;align-items:center;justify-content:center;padding:24px;}
+    .modal-bg.on{display:flex;}
+    .modal{background:var(--card);border-radius:22px;padding:22px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px;text-align:center;}
+    .modal .big{font-size:42px;}
+    .line-btn{width:100%;padding:14px;border-radius:14px;background:#06c755;color:#fff;font-size:16px;font-weight:800;}
     .toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);background:rgba(30,25,20,.92);color:#fff;padding:11px 18px;border-radius:14px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:999;max-width:90vw;text-align:center;}
     .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
   </style>
@@ -175,6 +180,16 @@
   <div class="card" id="me-card"></div>
   <div class="list" id="inbox-list"></div>
 </section>
+
+<div class="modal-bg" id="sent-modal">
+  <div class="modal">
+    <div class="big">💌</div>
+    <div class="h2" id="sent-title">届けました！</div>
+    <div class="note">相手に「届いたよ」とLINEで知らせますか？</div>
+    <button class="line-btn" id="btn-line-notify">LINEで知らせる</button>
+    <button class="link" id="btn-sent-close">とじる</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -451,6 +466,11 @@ function listenInbox(){
   unsubInbox = db.collection('users').doc(me.uid).collection('inbox')
     .orderBy('createdAt', 'desc').limit(50)
     .onSnapshot(snap => {
+      if (inboxLoaded) {
+        snap.docChanges().filter(c => c.type === 'added' && !c.doc.data().read)
+          .forEach(c => notifyArrival(c.doc.data()));
+      }
+      inboxLoaded = true;
       inbox = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       const n = inbox.filter(x => !x.read).length;
       const b = $('#inbox-badge'); b.textContent = n; b.classList.toggle('on', n > 0);
@@ -520,9 +540,9 @@ async function sendDirect(){
       read: false, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     store.set('oekaki-last-to', to);
-    toast(`${to} さんに届けました 💌`);
     $('#send-msg').value = '';
     show('draw');
+    openSentModal(to);
   } catch (e) {
     err.textContent = e.message === 'notfound' ? 'そのなまえの人は見つかりません' : '送信できませんでした';
     console.error(e);
@@ -531,13 +551,54 @@ async function sendDirect(){
 
 $('#btn-inbox').onclick = () => show('inbox');
 
+/* ── 届いた通知 ── */
+let inboxLoaded = false;
+const APP_URL = location.origin + location.pathname;
+async function notifyArrival(x){
+  const body = x.message ? x.message : '新しい絵が届きました';
+  toast(`🎨 ${x.fromName} さんから絵が届きました`);
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const opt = { body, icon:'icon.svg', badge:'icon.svg', tag:'oekaki-' + (x.createdAt?.seconds || Date.now()), data:{ url: APP_URL + '#inbox' } };
+    if (reg) await reg.showNotification(`${x.fromName} さんから絵が届きました`, opt);
+    else new Notification(`${x.fromName} さんから絵が届きました`, opt);
+  } catch (e) { console.error(e); }
+}
+function notifyCard(){
+  if (!('Notification' in window)) return '';
+  if (Notification.permission === 'granted') return `<div class="note">🔔 通知：オン（アプリを開いている間・バックグラウンドの間に届きます）</div>`;
+  if (Notification.permission === 'denied') return `<div class="note">🔕 通知はブラウザの設定でブロックされています</div>`;
+  return `<button class="ghost" id="btn-notify">🔔 届いたら通知する</button>`;
+}
+
+/* ── 送ったあと LINE で知らせる ── */
+let lastSentTo = '';
+function openSentModal(to){
+  lastSentTo = to;
+  $('#sent-title').textContent = `${to} さんに届けました！`;
+  $('#sent-modal').classList.add('on');
+}
+$('#btn-sent-close').onclick = () => $('#sent-modal').classList.remove('on');
+$('#btn-line-notify').onclick = () => {
+  const text = `${myName} から絵が届いたよ🎨\nここから見てね👇\n${APP_URL}#inbox`;
+  window.open('https://line.me/R/share?text=' + encodeURIComponent(text), '_blank');
+  $('#sent-modal').classList.remove('on');
+};
+
 function renderMe(){
   const c = $('#me-card');
   if (!FB_ON) { c.innerHTML = `<div class="note">受信箱を使うには Firebase の設定が必要です（index.html 内の FB_CONFIG）。</div>`; return; }
   if (!me) { c.innerHTML = `<div class="note">接続中…</div>`; return; }
   if (!myName) { nameForm(c, () => {}); return; }
   c.innerHTML = `<div class="note">あなたのなまえ</div><div class="h2" style="font-size:20px">${esc(myName)}</div>
-    <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>`;
+    <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>${notifyCard()}`;
+  const nb = c.querySelector('#btn-notify');
+  if (nb) nb.onclick = async () => {
+    const r = await Notification.requestPermission();
+    toast(r === 'granted' ? '通知をオンにしました' : '通知はオフのままです');
+    renderMe();
+  };
 }
 
 function fmtDate(ts){
@@ -584,6 +645,8 @@ function renderInbox(){
     db.collection('users').doc(me.uid).collection('inbox').doc(x.id).update({ read:true }).catch(() => {}));
 }
 renderMe();
+
+if (location.hash === '#inbox') show('inbox');
 
 /* ── PWA ── */
 if ('serviceWorker' in navigator) {
