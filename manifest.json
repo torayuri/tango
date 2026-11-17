@@ -1,18 +1,13 @@
 {
-  "name": "暗記カードアプリ",
-  "short_name": "暗記カード",
-  "description": "単語帳・暗記カードアプリ",
+  "name": "おえかきレター",
+  "short_name": "おえかき",
+  "description": "自由にかいたイラストを相手に送れるアプリ",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#e8f6f8",
-  "theme_color": "#2193b0",
+  "background_color": "#fff7f0",
+  "theme_color": "#ff7a59",
   "icons": [
-    {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }

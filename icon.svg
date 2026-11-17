@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="100" fill="#2193b0"/>
-  <rect x="80" y="120" width="352" height="272" rx="24" fill="white" opacity="0.15"/>
-  <rect x="100" y="140" width="312" height="232" rx="18" fill="white"/>
-  <text x="256" y="290" font-size="140" text-anchor="middle" font-family="serif" fill="#2193b0">暗</text>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7a59"/><stop offset="1" stop-color="#ffb547"/></linearGradient></defs>
+  <rect width="512" height="512" rx="100" fill="url(#g)"/>
+  <rect x="96" y="150" width="320" height="230" rx="22" fill="#fff"/>
+  <path d="M96 172 L256 280 L416 172" fill="none" stroke="#ffd9cc" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M150 330 C190 270 230 360 270 300 S340 260 362 320" fill="none" stroke="#ff7a59" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="380" cy="140" r="44" fill="#e5484d"/>
+  <path d="M380 166 l-24 -24 a16 16 0 0 1 24 -20 a16 16 0 0 1 24 20 z" fill="#fff"/>
 </svg>
