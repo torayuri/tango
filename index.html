@@ -575,7 +575,7 @@ async function notifyArrival(x){
 function notifyCard(){
   if (!('Notification' in window)) return '';
   if (Notification.permission === 'granted') return PUSH_ON
-    ? `<div class="note">🔔 通知：オン（アプリを閉じていても届きます）${pushStatus === 'ok' ? ' ✅登録済み' : pushStatus ? '<br>⚠️ 登録できませんでした（' + esc(pushStatus) + '）' : '<br>登録中…'}</div>`
+    ? `<div class="note">🔔 通知：オン（アプリを閉じていても届きます）${pushStatus === 'ok' ? ' ✅登録済み' : pushStatus ? '<br>⚠️ 登録できませんでした（' + esc(pushStatus) + '）' : '<br>登録中…'}</div>` + `<button class="ghost" id="btn-test-notify">🔔 テスト通知を出す</button>`
     : `<div class="note">🔔 通知：オン（アプリを開いている間・バックグラウンドの間に届きます）</div>`;
   if (Notification.permission === 'denied') return `<div class="note">🔕 通知はブラウザの設定でブロックされています</div>`;
   return `<button class="ghost" id="btn-notify">🔔 届いたら通知する</button>`;
@@ -633,6 +633,14 @@ function renderMe(){
   if (!myName) { nameForm(c, () => {}); return; }
   c.innerHTML = `<div class="note">あなたのなまえ</div><div class="h2" style="font-size:20px">${esc(myName)}</div>
     <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>${notifyCard()}`;
+  const tb = c.querySelector('#btn-test-notify');
+  if (tb) tb.onclick = async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('テスト通知です', { body:'これが見えたら通知はちゃんと出ます 🎨', icon:'icon.svg', tag:'oekaki-test' });
+      toast('テスト通知を出しました');
+    } catch (e) { toast('通知を出せませんでした: ' + (e && e.message)); }
+  };
   const nb = c.querySelector('#btn-notify');
   if (nb) nb.onclick = async () => {
     const r = await Notification.requestPermission();
