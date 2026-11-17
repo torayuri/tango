@@ -242,9 +242,9 @@ const store = {
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let toastTimer;
-function toast(msg){
+function toast(msg, ms = 2200){
   const t = $('#toast'); t.textContent = msg; t.classList.add('on');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), ms);
 }
 function show(name){
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'scr-' + name));
@@ -608,8 +608,15 @@ async function pingPush(toUid){
   try {
     const idToken = await me.getIdToken();
     // text/plain にしてプリフライト無しで送る
-    fetch(PUSH_URL, { method:'POST', headers:{ 'Content-Type':'text/plain' }, body: JSON.stringify({ idToken, to: toUid }) }).catch(() => {});
-  } catch {}
+    const r = await fetch(PUSH_URL, { method:'POST', headers:{ 'Content-Type':'text/plain' }, body: JSON.stringify({ idToken, to: toUid }) });
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch {}
+    if (!j) toast('🔔 通知サーバーが古いままです（Hello World）', 5000);
+    else if (j.error) toast('🔔 通知エラー: ' + j.error, 5000);
+    else if (j.sent > 0) toast('🔔 相手に通知しました', 5000);
+    else if (j.results && j.results.length) toast('🔔 通知を送れませんでした（' + j.results.join(',') + '）', 5000);
+    else toast('🔔 相手は通知をオンにしていません', 5000);
+  } catch (e) { toast('🔔 通知サーバーにつながりません: ' + (e && e.message), 5000); }
 }
 
 /* ── 送ったあと LINE で知らせる ── */
