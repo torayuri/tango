@@ -44,7 +44,19 @@
 
     /* canvas */
     .board{position:relative;width:100%;aspect-ratio:1/1;border-radius:20px;overflow:hidden;box-shadow:var(--shadow);background:#fff;touch-action:none;}
-    .board canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;}
+    .board canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;pointer-events:none;}
+    .board #cv-live{pointer-events:auto;}
+    .brushes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+    .brush{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 4px 6px;border-radius:12px;background:var(--bg);font-size:12px;font-weight:700;color:var(--sub);border:2px solid transparent;}
+    .brush canvas{width:100%;max-width:64px;height:24px;border-radius:6px;}
+    .brush.on{border-color:var(--accent);color:var(--ink);background:var(--card);}
+    .sw-edit{position:relative;}
+    .sw-del{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#2b2622;color:#fff;font-size:11px;line-height:18px;text-align:center;}
+    .sw-add{background:var(--bg);border:2px dashed var(--sub);font-size:16px;color:var(--sub);line-height:26px;text-align:center;}
+    .sw input[type=color]{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;}
+    .pal-note{width:100%;font-size:12px;color:var(--sub);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+    .bg-sw.chalk{width:44px;background:#2f4b3c;color:#fff;font-size:11px;font-weight:700;}
+    .bg-sw.base{width:44px;background-size:cover;background-position:center;}
 
     /* tools */
     .tools{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column;gap:12px;}
@@ -54,7 +66,7 @@
     .seg button{padding:7px 12px;border-radius:9px;font-size:14px;font-weight:600;color:var(--sub);}
     .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08);}
     .colors{display:flex;flex-wrap:wrap;gap:8px;}
-    .sw{width:30px;height:30px;border-radius:50%;border:2px solid rgba(0,0,0,.08);position:relative;}
+    .sw{display:block;width:30px;height:30px;border-radius:50%;border:2px solid rgba(0,0,0,.08);position:relative;}
     .sw.on{outline:3px solid var(--accent);outline-offset:2px;}
     .sw.custom{background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);overflow:hidden;}
     .sw.custom input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;}
@@ -89,7 +101,7 @@
     .item .from .new{background:#e5484d;color:#fff;font-size:10px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;}
     .item .msg{font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
     .item .when{font-size:11px;color:var(--sub);}
-    .item .acts{display:flex;gap:8px;padding:0 14px 12px;}
+    .item .acts{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 12px;}
     .item .acts button{font-size:13px;font-weight:700;padding:7px 12px;border-radius:10px;background:var(--bg);}
     .empty{text-align:center;color:var(--sub);padding:48px 0;font-size:14px;}
 
@@ -116,16 +128,16 @@
   </div>
 
   <div class="board" id="board">
+    <canvas id="cv-bg"></canvas>
     <canvas id="cv-layer"></canvas>
+    <canvas id="cv-live"></canvas>
   </div>
 
   <div class="tools">
+    <div class="brushes" id="brushes"></div>
     <div class="row between">
-      <div class="seg" id="tool-seg">
-        <button data-tool="pen" class="on">✏️ ペン</button>
-        <button data-tool="eraser">🧽 消しゴム</button>
-      </div>
-      <button class="link" id="btn-clear">ぜんぶ消す</button>
+      <span class="label">色</span>
+      <button class="link" id="btn-pal-edit">パレットを編集</button>
     </div>
     <div class="colors" id="colors"></div>
     <div class="row">
@@ -139,6 +151,7 @@
       <span class="label">背景</span>
       <div class="colors" id="bgs"></div>
     </div>
+    <div class="row" style="justify-content:flex-end"><button class="link" id="btn-clear">ぜんぶ消す</button></div>
   </div>
 
   <button class="primary" id="btn-next">💌 この絵を送る</button>
@@ -256,59 +269,223 @@ document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => show(b.d
 
 /* ━━━━━━━━━━ お絵かき ━━━━━━━━━━ */
 const SIZE = 1080;                       // 内部解像度（正方形）
-const PALETTE = ['#2b2622','#ffffff','#e5484d','#ff8a3d','#ffd23f','#3bb273','#2fa8e0','#4f5bd5','#a45ee5','#ff7eb6','#8b5a3c','#9aa0a6'];
-const BGS = ['#ffffff','#fff6d8','#ffe4ec','#e3f4ff','#e7f7e3','#2b2622'];
+const DEFAULT_PALETTE = ['#2b2622','#ffffff','#e5484d','#ff8a3d','#ffd23f','#3bb273','#2fa8e0','#4f5bd5','#a45ee5','#ff7eb6','#8b5a3c','#9aa0a6'];
+const BGS = ['#ffffff','#fff6d8','#ffe4ec','#e3f4ff','#e7f7e3','#2b2622','chalkboard'];
+const CHALK_GREEN = '#2f4b3c';
 
-const cv = $('#cv-layer');
-cv.width = cv.height = SIZE;
-const ctx = cv.getContext('2d');
-const board = $('#board');
+// ブラシの種類（alpha があるものは1本の線を描いてから半透明で重ねる）
+const BR = {
+  pen:    { name:'ペン',     alpha:0 },
+  brush:  { name:'筆',       alpha:0 },
+  water:  { name:'水彩',     alpha:.45 },
+  chalk:  { name:'チョーク', alpha:0 },
+  pencil: { name:'えんぴつ', alpha:0 },
+  spray:  { name:'スプレー', alpha:0 },
+  neon:   { name:'ネオン',   alpha:0 },
+  eraser: { name:'消しゴム', alpha:0 },
+};
+const LINE_TOOLS = new Set(['pen','eraser','water','neon','brush']);
 
+const bgCv = $('#cv-bg'), cv = $('#cv-layer'), live = $('#cv-live');
+[bgCv, cv, live].forEach(c => c.width = c.height = SIZE);
+const bgctx = bgCv.getContext('2d'), ctx = cv.getContext('2d'), lctx = live.getContext('2d');
+
+const isHex = c => /^#[0-9a-f]{6}$/i.test(c);
 const saved = store.get('oekaki-doc', null);
-let ops   = Array.isArray(saved?.ops) ? saved.ops : [];   // {t:'s',tool,color,size,pts:[[x,y],...]} | {t:'c'}
-let redo  = [];
-let bg    = saved?.bg || BGS[0];
-let tool  = 'pen';
-let color = PALETTE[0];
-let size  = 8;
-let cur   = null;
+let ops     = Array.isArray(saved?.ops) ? saved.ops : [];   // {t:'s',tool,color,size,seed,pts:[[x,y,w?],...]} | {t:'c'}
+let redo    = [];
+let bg      = BGS.includes(saved?.bg) ? saved.bg : BGS[0];
+let base    = typeof saved?.base === 'string' ? saved.base : null;   // 返信で描き足すときの相手の絵
+let baseImg = null;
+let palette = (store.get('oekaki-palette', null) || DEFAULT_PALETTE).filter(isHex);
+if (!palette.length) palette = DEFAULT_PALETTE.slice();
+let palEdit = false;
+let tool    = 'pen', lastBrush = 'pen';
+let color   = palette[0];
+let size    = 8;
+let cur     = null;
 
-function persist(){ store.set('oekaki-doc', { ops, bg }); }
+function persist(){ store.set('oekaki-doc', { ops, bg, base }); }
 
-function strokeStyle(op){
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.lineWidth = op.size;
-  ctx.globalCompositeOperation = op.tool === 'eraser' ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = ctx.fillStyle = op.color;
+/* ── 乱数（同じ線は何度描き直しても同じ見た目になるように seed 付き） ── */
+function rngFor(seed, i){
+  let a = (Math.imul(seed | 0, 2654435761) ^ Math.imul(i + 1, 40503)) >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
 }
-function drawDot(p, op){
-  ctx.beginPath(); ctx.arc(p[0], p[1], op.size / 2, 0, Math.PI * 2); ctx.fill();
-}
-// 中点を使った滑らかな曲線で i 番目の区間を描く
-function drawSegment(op, i){
-  const p = op.pts;
-  if (i === 0) { drawDot(p[0], op); return; }
+
+/* ── 線の描画 ── */
+function dot(g, x, y, r){ g.beginPath(); g.arc(x, y, Math.max(.5, r), 0, Math.PI * 2); g.fill(); }
+// 中点を使った滑らかな曲線で i 番目の区間（tail=true なら最後の半区間）を描く
+function curve(g, p, i, tail){
+  if (tail) {
+    const n = p.length; if (n < 2) return;
+    const b = p[n - 2], c = p[n - 1];
+    g.beginPath(); g.moveTo((b[0] + c[0]) / 2, (b[1] + c[1]) / 2); g.lineTo(c[0], c[1]); g.stroke();
+    return;
+  }
   const a = p[i - 2] || p[i - 1], b = p[i - 1], c = p[i];
-  const m1 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const m2 = [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2];
-  ctx.beginPath(); ctx.moveTo(m1[0], m1[1]); ctx.quadraticCurveTo(b[0], b[1], m2[0], m2[1]); ctx.stroke();
+  g.beginPath(); g.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+  g.quadraticCurveTo(b[0], b[1], (b[0] + c[0]) / 2, (b[1] + c[1]) / 2); g.stroke();
 }
-function drawOp(op){
-  if (op.t === 'c') { ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, SIZE, SIZE); return; }
-  strokeStyle(op);
-  for (let i = 0; i < op.pts.length; i++) drawSegment(op, i);
-  // 最後の半区間
-  const n = op.pts.length;
-  if (n > 1) {
-    const b = op.pts[n - 2], c = op.pts[n - 1];
-    ctx.beginPath(); ctx.moveTo((b[0] + c[0]) / 2, (b[1] + c[1]) / 2); ctx.lineTo(c[0], c[1]); ctx.stroke();
+// 区間に沿って点を打つブラシ用：a→b を step ごとに歩く
+function walk(p, i, step, fn){
+  const a = p[Math.max(0, i - 1)], b = p[i];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const n = Math.max(1, Math.ceil(len / step));
+  for (let k = 0; k < n; k++) {
+    const t = i === 0 ? 0 : (k + 1) / n;
+    fn(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
   }
 }
+
+function drawSeg(g, op, i, tail = false){
+  const p = op.pts, s = op.size, col = op.color;
+  const lineOrDot = r => (i === 0 && !tail) ? dot(g, p[0][0], p[0][1], r) : curve(g, p, i, tail);
+  g.save();
+  g.lineCap = g.lineJoin = 'round';
+  switch (op.tool) {
+    case 'eraser':
+      g.globalCompositeOperation = 'destination-out';
+      g.strokeStyle = g.fillStyle = '#000'; g.lineWidth = s;
+      lineOrDot(s / 2);
+      break;
+    case 'water': {
+      const r = rngFor(op.seed, i);
+      g.strokeStyle = g.fillStyle = col; g.lineWidth = s * (.85 + .3 * r());
+      g.shadowColor = col; g.shadowBlur = s * .4;
+      lineOrDot(s / 2);
+      break;
+    }
+    case 'brush': {
+      g.strokeStyle = g.fillStyle = col;
+      const wOf = q => q[2] || s;
+      if (i === 0 && !tail) { dot(g, p[0][0], p[0][1], wOf(p[0]) / 2); break; }
+      const j = tail ? p.length - 1 : i;
+      g.lineWidth = (wOf(p[j - 1]) + wOf(p[j])) / 2;
+      curve(g, p, i, tail);
+      break;
+    }
+    case 'neon':
+      g.strokeStyle = g.fillStyle = col; g.lineWidth = s;
+      g.shadowColor = col; g.shadowBlur = s * 1.6;
+      lineOrDot(s / 2);
+      g.shadowBlur = s * .4;
+      g.strokeStyle = g.fillStyle = 'rgba(255,255,255,.85)'; g.lineWidth = s * .35;
+      lineOrDot(s * .18);
+      break;
+    case 'chalk': {
+      if (tail) break;
+      const r = rngFor(op.seed, i), per = Math.max(4, Math.round(s * .9));
+      g.fillStyle = col;
+      walk(p, i, Math.max(1.5, s * .12), (x, y) => {
+        for (let k = 0; k < per; k++) {
+          const ang = r() * Math.PI * 2, rad = s / 2 * Math.sqrt(r()), d = 1 + r() * s * .06;
+          g.globalAlpha = .35 + r() * .6;
+          g.fillRect(x + Math.cos(ang) * rad, y + Math.sin(ang) * rad, d, d);
+        }
+      });
+      break;
+    }
+    case 'pencil': {
+      if (tail) break;
+      const r = rngFor(op.seed, i), w = Math.max(2, s * .45);
+      g.strokeStyle = g.fillStyle = col;
+      if (i > 0) {
+        g.globalAlpha = .6; g.lineWidth = w * .5; g.lineCap = 'butt';
+        const a = p[i - 1], b = p[i];
+        g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      }
+      walk(p, i, 1.2, (x, y) => {
+        for (let k = 0; k < 3; k++) {
+          g.globalAlpha = .12 + r() * .35;
+          g.fillRect(x + (r() - .5) * w * .9, y + (r() - .5) * w * .9, 1.1, 1.1);
+        }
+      });
+      break;
+    }
+    case 'spray': {
+      if (tail) break;
+      const r = rngFor(op.seed, i), R = s * 1.2, per = Math.max(6, Math.round(s * 1.1));
+      g.fillStyle = col;
+      walk(p, i, R * .5, (x, y) => {
+        for (let k = 0; k < per; k++) {
+          const ang = r() * Math.PI * 2, rad = R * Math.sqrt(r()), d = 1 + r() * 1.6;
+          g.globalAlpha = .45 + r() * .55;
+          g.fillRect(x + Math.cos(ang) * rad, y + Math.sin(ang) * rad, d, d);
+        }
+      });
+      break;
+    }
+    default: // pen
+      g.strokeStyle = g.fillStyle = col; g.lineWidth = s;
+      lineOrDot(s / 2);
+  }
+  g.restore();
+}
+
+function renderStroke(g, op){
+  for (let i = 0; i < op.pts.length; i++) drawSeg(g, op, i);
+  if (LINE_TOOLS.has(op.tool)) drawSeg(g, op, op.pts.length - 1, true);
+}
+// 半透明ブラシは別のキャンバスに描いてから重ねる（線の重なりで濃くならないように）
+const scratch = document.createElement('canvas');
+function commitOp(g, op, w = SIZE, h = SIZE){
+  if (op.t === 'c') { g.clearRect(0, 0, w, h); return; }
+  const alpha = BR[op.tool]?.alpha;
+  if (!alpha) { renderStroke(g, op); return; }
+  if (scratch.width !== w || scratch.height !== h) { scratch.width = w; scratch.height = h; }
+  const sg = scratch.getContext('2d');
+  sg.clearRect(0, 0, w, h);
+  renderStroke(sg, op);
+  g.save(); g.globalAlpha = alpha; g.drawImage(scratch, 0, 0); g.restore();
+}
+
+/* ── 背景 ── */
+function paintBg(){
+  bgctx.clearRect(0, 0, SIZE, SIZE);
+  if (base && baseImg?.complete && baseImg.naturalWidth) { bgctx.drawImage(baseImg, 0, 0, SIZE, SIZE); return; }
+  if (bg !== 'chalkboard') { bgctx.fillStyle = bg; bgctx.fillRect(0, 0, SIZE, SIZE); return; }
+  // 黒板：深緑＋チョークの粉っぽいムラ
+  bgctx.fillStyle = CHALK_GREEN; bgctx.fillRect(0, 0, SIZE, SIZE);
+  const r = rngFor(20251117, 0);
+  for (let k = 0; k < 14; k++) {
+    const x = r() * SIZE, y = r() * SIZE, rad = 120 + r() * 260;
+    const gr = bgctx.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(255,255,255,${.03 + r() * .04})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    bgctx.fillStyle = gr; bgctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  for (let k = 0; k < 9000; k++) {
+    bgctx.fillStyle = r() < .5 ? `rgba(255,255,255,${r() * .06})` : `rgba(0,0,0,${r() * .08})`;
+    bgctx.fillRect(r() * SIZE, r() * SIZE, 2, 2);
+  }
+  // こすった跡
+  bgctx.strokeStyle = 'rgba(255,255,255,.035)'; bgctx.lineCap = 'round';
+  for (let k = 0; k < 6; k++) {
+    bgctx.lineWidth = 40 + r() * 70;
+    const y = r() * SIZE;
+    bgctx.beginPath(); bgctx.moveTo(r() * 300, y); bgctx.quadraticCurveTo(SIZE / 2, y + (r() - .5) * 200, SIZE - r() * 300, y + (r() - .5) * 120); bgctx.stroke();
+  }
+}
+function setBase(url){
+  base = url; baseImg = null;
+  if (url) {
+    baseImg = new Image();
+    baseImg.onload = () => { paintBg(); renderBgs(); };
+    baseImg.src = url;
+  }
+  paintBg(); renderBgs(); persist();
+}
+
 function redraw(){
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ops.forEach(drawOp);
-  board.style.background = bg;
+  ops.forEach(op => commitOp(ctx, op));
   updateUndo();
 }
 function updateUndo(){
@@ -316,38 +493,61 @@ function updateUndo(){
   $('#btn-redo').disabled = !redo.length;
 }
 
+/* ── 入力 ── */
 function toPt(e){
-  const r = cv.getBoundingClientRect();
+  const r = live.getBoundingClientRect();
   return [Math.round((e.clientX - r.left) / r.width * SIZE * 10) / 10,
           Math.round((e.clientY - r.top) / r.height * SIZE * 10) / 10];
 }
-cv.addEventListener('pointerdown', e => {
+const liveTarget = op => op.tool === 'eraser' ? ctx : lctx;
+live.addEventListener('pointerdown', e => {
   if (cur) return;
   e.preventDefault();
-  cv.setPointerCapture(e.pointerId);
-  const scale = SIZE / cv.getBoundingClientRect().width;
-  cur = { t:'s', tool, color, size: Math.round(size * scale * (tool === 'eraser' ? 2 : 1)), pts:[toPt(e)], id:e.pointerId };
-  strokeStyle(cur); drawSegment(cur, 0);
+  live.setPointerCapture(e.pointerId);
+  const scale = SIZE / live.getBoundingClientRect().width;
+  const s = Math.round(size * scale * (tool === 'eraser' ? 2 : 1));
+  const p = toPt(e);
+  if (tool === 'brush') p[2] = Math.round(s * 3.5) / 10;
+  cur = { t:'s', tool, color, size:s, seed:(Math.random() * 2 ** 31) | 0, pts:[p], id:e.pointerId, lt:e.timeStamp };
+  lctx.clearRect(0, 0, SIZE, SIZE);
+  live.style.opacity = BR[tool].alpha || 1;
+  drawSeg(liveTarget(cur), cur, 0);
 });
-cv.addEventListener('pointermove', e => {
+live.addEventListener('pointermove', e => {
   if (!cur || e.pointerId !== cur.id) return;
-  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-  strokeStyle(cur);
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
   for (const ev of (evs.length ? evs : [e])) {
     const p = toPt(ev), last = cur.pts[cur.pts.length - 1];
-    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 1.5) continue;
+    const d = Math.hypot(p[0] - last[0], p[1] - last[1]);
+    if (d < 1.5) continue;
+    if (cur.tool === 'brush') {
+      // 速く動かすと細く、ゆっくりだと太く
+      const speed = d / Math.max(1, ev.timeStamp - cur.lt);
+      const target = cur.size * Math.min(1.3, Math.max(.25, 1.3 - speed * .12));
+      p[2] = Math.round((last[2] * .75 + target * .25) * 10) / 10;
+    }
+    cur.lt = ev.timeStamp;
     cur.pts.push(p);
-    drawSegment(cur, cur.pts.length - 1);
+    drawSeg(liveTarget(cur), cur, cur.pts.length - 1);
   }
 });
 function endStroke(e){
   if (!cur || e.pointerId !== cur.id) return;
-  const op = cur; cur = null; delete op.id;
+  const op = cur; cur = null; delete op.id; delete op.lt;
+  if (op.tool === 'brush') {
+    // 筆の払い：最後に向かって細くする
+    const n = op.pts.length, k = Math.min(8, n - 1);
+    for (let j = 0; j < k; j++) op.pts[n - 1 - j][2] = Math.round(op.pts[n - 1 - j][2] * (j + 1) / (k + 1) * 10) / 10;
+  }
+  lctx.clearRect(0, 0, SIZE, SIZE);
+  live.style.opacity = 1;
+  if (op.tool === 'eraser') drawSeg(ctx, op, op.pts.length - 1, true);
+  else commitOp(ctx, op);
   ops.push(op); redo = [];
-  redraw(); persist();
+  updateUndo(); persist();
 }
-cv.addEventListener('pointerup', endStroke);
-cv.addEventListener('pointercancel', endStroke);
+live.addEventListener('pointerup', endStroke);
+live.addEventListener('pointercancel', endStroke);
 
 $('#btn-undo').onclick = () => { if (ops.length) { redo.push(ops.pop()); redraw(); persist(); } };
 $('#btn-redo').onclick = () => { if (redo.length) { ops.push(redo.pop()); redraw(); persist(); } };
@@ -357,46 +557,123 @@ $('#btn-clear').onclick = () => {
   toast('消しました（↶で戻せます）');
 };
 
-/* tool UI */
-document.querySelectorAll('#tool-seg button').forEach(b => b.onclick = () => {
-  tool = b.dataset.tool;
-  document.querySelectorAll('#tool-seg button').forEach(x => x.classList.toggle('on', x === b));
+/* ── ブラシ選択（見本つき） ── */
+function renderBrushes(){
+  const wrap = $('#brushes');
+  wrap.innerHTML = Object.entries(BR).map(([id, b]) =>
+    `<button class="brush${id === tool ? ' on' : ''}" data-tool="${id}"><canvas width="128" height="48"></canvas><span>${b.name}</span></button>`).join('');
+  wrap.querySelectorAll('.brush').forEach(btn => {
+    btn.onclick = () => setTool(btn.dataset.tool);
+    drawBrushSample(btn.querySelector('canvas'), btn.dataset.tool);
+  });
+}
+function isLight(c){
+  if (!isHex(c)) return false;
+  const n = parseInt(c.slice(1), 16), r = n >> 16, g = n >> 8 & 255, b = n & 255;
+  return (r * .299 + g * .587 + b * .114) > 200;
+}
+function drawBrushSample(c, id){
+  const g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const dark = id !== 'eraser' && isLight(color);
+  g.fillStyle = dark ? '#4a4540' : (id === 'neon' ? '#221d2e' : '#fff');
+  g.fillRect(0, 0, W, H);
+  if (id === 'eraser') {
+    g.fillStyle = '#c9c2bb'; g.fillRect(10, 18, W - 20, 12);
+    g.clearRect(30, 14, 50, 20); g.fillStyle = '#fff'; g.fillRect(30, 14, 50, 20);
+    return;
+  }
+  const pts = [];
+  for (let k = 0; k <= 40; k++) {
+    const t = k / 40, x = 12 + t * (W - 24), y = H / 2 + Math.sin(t * Math.PI * 2) * (H * .22);
+    pts.push(id === 'brush' ? [x, y, 10 * Math.max(.2, Math.sin(Math.PI * t) * 1.2)] : [x, y]);
+  }
+  commitOp(g, { t:'s', tool:id, color, size: id === 'spray' ? 6 : 9, seed:7, pts }, W, H);
+}
+function setTool(id){
+  tool = id;
+  if (id !== 'eraser') lastBrush = id;
+  document.querySelectorAll('#brushes .brush').forEach(x => x.classList.toggle('on', x.dataset.tool === id));
   updateSizeDot();
-});
+}
+
+/* ── カラーパレット（編集できる） ── */
+function savePalette(){ store.set('oekaki-palette', palette); }
 function renderColors(){
   const wrap = $('#colors');
-  wrap.innerHTML = PALETTE.map(c => `<button class="sw${c === color ? ' on' : ''}" style="background:${c}" data-c="${c}" aria-label="${c}"></button>`).join('')
-    + `<label class="sw custom${PALETTE.includes(color) ? '' : ' on'}" title="好きな色"><input type="color" id="custom-color" value="${color}"></label>`;
-  wrap.querySelectorAll('[data-c]').forEach(b => b.onclick = () => setColor(b.dataset.c));
-  $('#custom-color').oninput = e => setColor(e.target.value);
+  $('#btn-pal-edit').textContent = palEdit ? '完了' : 'パレットを編集';
+  if (!palEdit) {
+    wrap.innerHTML = palette.map(c => `<button class="sw${c === color ? ' on' : ''}" style="background:${c}" data-c="${c}" aria-label="${c}"></button>`).join('')
+      + `<label class="sw custom${palette.includes(color) ? '' : ' on'}" title="好きな色"><input type="color" id="custom-color" value="${isHex(color) ? color : '#000000'}"></label>`;
+    wrap.querySelectorAll('[data-c]').forEach(b => b.onclick = () => setColor(b.dataset.c));
+    $('#custom-color').oninput = e => setColor(e.target.value);
+    return;
+  }
+  wrap.innerHTML = palette.map((c, i) => `
+      <div class="sw-edit">
+        <label class="sw" style="background:${c}"><input type="color" value="${c}" data-i="${i}"></label>
+        ${palette.length > 1 ? `<button class="sw-del" data-del="${i}" aria-label="削除">×</button>` : ''}
+      </div>`).join('')
+    + (palette.length < 24 ? `<button class="sw sw-add" id="pal-add" title="色を追加">＋</button>` : '')
+    + `<div class="pal-note">色をタップして変更・×で削除・＋で追加 <button class="link" id="pal-reset">最初の色に戻す</button></div>`;
+  wrap.querySelectorAll('input[data-i]').forEach(inp => {
+    inp.oninput = () => { inp.parentElement.style.background = inp.value; palette[+inp.dataset.i] = inp.value; };
+    inp.onchange = () => { palette[+inp.dataset.i] = inp.value; savePalette(); };
+  });
+  wrap.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { palette.splice(+b.dataset.del, 1); savePalette(); renderColors(); });
+  const add = $('#pal-add');
+  if (add) add.onclick = () => { palette.push(isHex(color) ? color : '#888888'); savePalette(); renderColors(); };
+  $('#pal-reset').onclick = () => { if (confirm('パレットを最初の色に戻しますか？')) { palette = DEFAULT_PALETTE.slice(); savePalette(); renderColors(); } };
 }
+$('#btn-pal-edit').onclick = () => { palEdit = !palEdit; renderColors(); };
 function setColor(c){
   color = c;
-  if (tool === 'eraser') $('#tool-seg [data-tool=pen]').click();
-  renderColors(); updateSizeDot();
+  if (tool === 'eraser') setTool(lastBrush);
+  renderColors(); updateSizeDot(); renderBrushes();
 }
+
+/* ── 背景の選択 ── */
 function renderBgs(){
-  $('#bgs').innerHTML = BGS.map(c => `<button class="bg-sw${c === bg ? ' on' : ''}" style="background:${c}" data-bg="${c}" aria-label="背景 ${c}"></button>`).join('');
-  $('#bgs').querySelectorAll('[data-bg]').forEach(b => b.onclick = () => { bg = b.dataset.bg; renderBgs(); redraw(); persist(); });
+  const sw = c => c === 'chalkboard'
+    ? `<button class="bg-sw chalk${!base && bg === c ? ' on' : ''}" data-bg="${c}" aria-label="黒板">黒板</button>`
+    : `<button class="bg-sw${!base && c === bg ? ' on' : ''}" style="background:${c}" data-bg="${c}" aria-label="背景 ${c}"></button>`;
+  $('#bgs').innerHTML = BGS.map(sw).join('')
+    + (base ? `<button class="bg-sw base on" style="background-image:url('${base}')" title="相手の絵"></button><button class="link" id="btn-unbase">相手の絵を外す</button>` : '');
+  $('#bgs').querySelectorAll('[data-bg]').forEach(b => b.onclick = () => {
+    if (base && !confirm('相手の絵を外して、背景を変えますか？')) return;
+    const toChalk = b.dataset.bg === 'chalkboard' && bg !== 'chalkboard';
+    bg = b.dataset.bg;
+    if (base) setBase(null);
+    if (toChalk) {
+      if (tool === 'pen') setTool('chalk');
+      if (color === '#2b2622') setColor('#ffffff');
+      toast('チョークで描くと黒板っぽくなるよ');
+    }
+    paintBg(); renderBgs(); persist();
+  });
+  const ub = $('#btn-unbase');
+  if (ub) ub.onclick = () => { if (confirm('相手の絵を外しますか？（描き足した線は残ります）')) setBase(null); };
 }
 function updateSizeDot(){
   const d = $('#size-dot'), s = Math.max(3, Math.min(32, size * (tool === 'eraser' ? 2 : 1)));
   d.style.width = d.style.height = s + 'px';
   d.style.background = tool === 'eraser' ? '#ccc' : color;
-  d.style.border = color.toLowerCase() === '#ffffff' && tool !== 'eraser' ? '1px solid #ccc' : 'none';
+  d.style.border = isLight(color) && tool !== 'eraser' ? '1px solid #ccc' : 'none';
   $('#size-label').textContent = size;
 }
 $('#size').oninput = e => { size = +e.target.value; updateSizeDot(); };
 
-renderColors(); renderBgs(); updateSizeDot(); redraw();
+renderBrushes(); renderColors(); updateSizeDot();
+setBase(base);   // 背景の描画も兼ねる
+redraw();
 
 /* ━━━━━━━━━━ 書き出し ━━━━━━━━━━ */
 function exportCanvas(px){
   const out = document.createElement('canvas');
   out.width = out.height = px;
   const o = out.getContext('2d');
-  o.fillStyle = bg; o.fillRect(0, 0, px, px);
   o.imageSmoothingQuality = 'high';
+  o.drawImage(bgCv, 0, 0, px, px);
   o.drawImage(cv, 0, 0, px, px);
   return out;
 }
@@ -678,6 +955,7 @@ function renderInbox(){
       <div class="acts">
         <button data-act="save">保存</button>
         <button data-act="reply">返事をかく</button>
+        <button data-act="over">✏️ 描き足して返す</button>
         <button data-act="del">削除</button>
       </div>
     </div>`).join('');
@@ -691,6 +969,13 @@ function renderInbox(){
     el.querySelector('[data-act=reply]').onclick = () => {
       store.set('oekaki-last-to', x.fromName);
       show('draw'); toast(`${x.fromName} さんへの返事をかこう`);
+    };
+    el.querySelector('[data-act=over]').onclick = () => {
+      if (!isEmpty() && !confirm('いま描いている絵は消えます。いいですか？')) return;
+      ops = []; redo = [];
+      redraw(); setBase(x.image);
+      store.set('oekaki-last-to', x.fromName);
+      show('draw'); toast(`${x.fromName} さんの絵に描き足そう`);
     };
     el.querySelector('[data-act=del]').onclick = async () => {
       if (confirm('この絵を削除しますか？')) await ref.delete().catch(console.error);
