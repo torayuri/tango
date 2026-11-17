@@ -442,6 +442,12 @@ $('#btn-save').onclick = () => { if (sendBlob) { downloadBlob(sendBlob, fileName
 
 /* ━━━━━━━━━━ Firebase（アプリ内で届ける） ━━━━━━━━━━ */
 const FB_ON = !!FB_CONFIG.apiKey;
+
+/* ── アプリを閉じていても届く通知（Web Push） ──
+   PUSH_URL: Cloudflare Workers に置いた通知サーバー（push-worker.js）のURL */
+const PUSH_URL = '';
+const VAPID_PUBLIC = 'BBO22dN0mNjobBoX378uA5nEZvT_veK0NxzHdNQK9MLVwfn80ntMyvxS50GHm2S8UGkXFi7hThJKO4N_C4yQRdM';
+const PUSH_ON = !!PUSH_URL && 'serviceWorker' in navigator && 'PushManager' in window;
 let auth = null, db = null, me = null, myName = null, inbox = [], unsubInbox = null;
 const NAME_RE = /^[a-zA-Z0-9_ぁ-んァ-ヶー一-龠]{2,16}$/;
 
@@ -456,7 +462,7 @@ if (FB_ON) {
         const doc = await db.collection('users').doc(user.uid).get();
         myName = doc.exists ? doc.data().name : null;
       } catch (e) { console.error(e); }
-      listenInbox(); renderDirect(); renderMe();
+      listenInbox(); renderDirect(); renderMe(); syncPush();
     });
   } catch (e) { console.error('Firebase init error:', e); }
 }
@@ -540,6 +546,7 @@ async function sendDirect(){
       read: false, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     store.set('oekaki-last-to', to);
+    pingPush(n.data().uid);
     $('#send-msg').value = '';
     show('draw');
     openSentModal(to);
@@ -560,16 +567,46 @@ async function notifyArrival(x){
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
-    const opt = { body, icon:'icon.svg', badge:'icon.svg', tag:'oekaki-' + (x.createdAt?.seconds || Date.now()), data:{ url: APP_URL + '#inbox' } };
+    const opt = { body, icon:'icon.svg', badge:'icon.svg', tag:'oekaki-new', renotify:true, data:{ url: APP_URL + '#inbox' } };
     if (reg) await reg.showNotification(`${x.fromName} さんから絵が届きました`, opt);
     else new Notification(`${x.fromName} さんから絵が届きました`, opt);
   } catch (e) { console.error(e); }
 }
 function notifyCard(){
   if (!('Notification' in window)) return '';
-  if (Notification.permission === 'granted') return `<div class="note">🔔 通知：オン（アプリを開いている間・バックグラウンドの間に届きます）</div>`;
+  if (Notification.permission === 'granted') return PUSH_ON
+    ? `<div class="note">🔔 通知：オン（アプリを閉じていても届きます）</div>`
+    : `<div class="note">🔔 通知：オン（アプリを開いている間・バックグラウンドの間に届きます）</div>`;
   if (Notification.permission === 'denied') return `<div class="note">🔕 通知はブラウザの設定でブロックされています</div>`;
   return `<button class="ghost" id="btn-notify">🔔 届いたら通知する</button>`;
+}
+
+/* ── Web Push の登録と送信 ── */
+async function syncPush(){
+  if (!PUSH_ON || !me || Notification.permission !== 'granted') return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const raw = Uint8Array.from(atob(VAPID_PUBLIC.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
+      sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: raw });
+    }
+    const mine = JSON.stringify(sub.toJSON());
+    const ref = db.collection('users').doc(me.uid);
+    const cur = ((await ref.get()).data()?.pushSubs || []);
+    if (cur.includes(mine)) return;
+    const endpoint = sub.endpoint;
+    const next = [mine, ...cur.filter(x => { try { return JSON.parse(x).endpoint !== endpoint; } catch { return false; } })].slice(0, 5);
+    await ref.set({ pushSubs: next }, { merge:true });
+  } catch (e) { console.error('push subscribe failed', e); }
+}
+async function pingPush(toUid){
+  if (!PUSH_URL || !me) return;
+  try {
+    const idToken = await me.getIdToken();
+    // text/plain にしてプリフライト無しで送る
+    fetch(PUSH_URL, { method:'POST', headers:{ 'Content-Type':'text/plain' }, body: JSON.stringify({ idToken, to: toUid }) }).catch(() => {});
+  } catch {}
 }
 
 /* ── 送ったあと LINE で知らせる ── */
@@ -596,6 +633,7 @@ function renderMe(){
   const nb = c.querySelector('#btn-notify');
   if (nb) nb.onclick = async () => {
     const r = await Notification.requestPermission();
+    if (r === 'granted') await syncPush();
     toast(r === 'granted' ? '通知をオンにしました' : '通知はオフのままです');
     renderMe();
   };

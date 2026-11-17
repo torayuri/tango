@@ -1,4 +1,4 @@
-const CACHE = 'oekaki-v3';
+const CACHE = 'oekaki-v4';
 const CDN_URLS = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
@@ -61,4 +61,16 @@ self.addEventListener('notificationclick', e => {
       return self.clients.openWindow(url);
     })
   );
+});
+
+// アプリを閉じていても届く通知（Web Push）
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch {}
+  e.waitUntil(self.registration.showNotification(d.title || '新しい絵が届きました', {
+    body: d.body || 'タップして見てみよう 🎨',
+    icon: 'icon.svg', badge: 'icon.svg',
+    tag: 'oekaki-new', renotify: true,
+    data: { url: d.url || './index.html#inbox' },
+  }));
 });
