@@ -1,4 +1,4 @@
-const CACHE = 'oekaki-v12';
+const CACHE = 'oekaki-v13';
 const CDN_URLS = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
@@ -73,4 +73,11 @@ self.addEventListener('push', e => {
     tag: 'oekaki-new', renotify: true,
     data: { url: d.url || './index.html#inbox' },
   }));
+});
+
+// 通知の登録が期限切れ・更新されたら登録し直す（アプリを次に開いたときに保存される）
+self.addEventListener('pushsubscriptionchange', e => {
+  const opts = e.oldSubscription && e.oldSubscription.options;
+  if (!opts) return;
+  e.waitUntil(self.registration.pushManager.subscribe(opts).catch(() => {}));
 });

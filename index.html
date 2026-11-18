@@ -1219,14 +1219,14 @@ async function syncPush(){
     const mine = JSON.stringify(sub.toJSON());
     const ref = db.collection('users').doc(me.uid);
     const cur = ((await ref.get()).data()?.pushSubs || []);
-    if (cur.includes(mine)) { pushStatus = 'ok'; renderMe(); return; }
-    const endpoint = sub.endpoint;
-    const next = [mine, ...cur.filter(x => { try { return JSON.parse(x).endpoint !== endpoint; } catch { return false; } })].slice(0, 5);
-    await ref.set({ pushSubs: next }, { merge:true });
+    // 古い登録は期限切れ（410）になって残り続けるので、いまの端末の登録だけにする
+    if (cur.length === 1 && cur[0] === mine) { pushStatus = 'ok'; renderMe(); return; }
+    await ref.set({ pushSubs: [mine] }, { merge:true });
     pushStatus = 'ok';
   } catch (e) { console.error('push subscribe failed', e); pushStatus = 'エラー: ' + (e && (e.name + ' ' + e.message)); }
   renderMe();
 }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncPush(); });
 async function pingPush(toUid){
   if (!PUSH_URL || !me) return;
   try {
@@ -1238,6 +1238,8 @@ async function pingPush(toUid){
     if (!j) toast('🔔 通知サーバーが古いままです（Hello World）', 5000);
     else if (j.error) toast('🔔 通知エラー: ' + j.error, 5000);
     else if (j.sent > 0) toast('🔔 相手に通知しました', 5000);
+    else if (j.results && j.results.length && j.results.every(r => r === 404 || r === 410))
+      toast('🔔 相手の通知の登録が古くなっていて届きませんでした。相手にアプリを一度開いてもらうと直ります', 7000);
     else if (j.results && j.results.length) toast('🔔 通知を送れませんでした（' + j.results.join(',') + '）', 5000);
     else toast('🔔 相手は通知をオンにしていません', 5000);
   } catch (e) { toast('🔔 通知サーバーにつながりません: ' + (e && e.message), 5000); }
