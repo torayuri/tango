@@ -109,6 +109,9 @@
     .me-details summary::-webkit-details-marker{display:none;}
     .me-details[open] summary{margin-bottom:12px;}
     .me-body{display:flex;flex-direction:column;gap:10px;}
+    .acct{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px;margin-top:4px;}
+    input[type=password]{width:100%;border:2px solid var(--line);border-radius:12px;padding:12px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink);outline:none;}
+    input[type=password]:focus{border-color:var(--accent);}
     .conv{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:12px;text-align:left;width:100%;}
     .avatar{width:48px;height:48px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff;}
     .conv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
@@ -266,6 +269,22 @@
       <span style="flex:1"></span>
       <button class="ghost" id="tx-cancel" style="width:auto;padding:11px 16px">やめる</button>
       <button class="primary" id="tx-ok" style="width:auto;padding:11px 22px;font-size:15px">決定</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="login-modal">
+  <div class="modal text-modal">
+    <div class="h2">🔑 ログイン</div>
+    <div class="note">ほかの端末でパスワードを設定した「なまえ」とパスワードを入れてください。</div>
+    <input type="text" id="lg-name" maxlength="16" placeholder="なまえ" autocomplete="username">
+    <input type="password" id="lg-pw" placeholder="パスワード" autocomplete="current-password">
+    <div class="note" id="lg-warn" style="color:#c2410c"></div>
+    <div class="err" id="lg-err"></div>
+    <div class="row tx-btns">
+      <span style="flex:1"></span>
+      <button class="ghost" id="lg-cancel" style="width:auto;padding:11px 16px">やめる</button>
+      <button class="primary" id="lg-ok" style="width:auto;padding:11px 22px;font-size:15px">ログイン</button>
     </div>
   </div>
 </div>
@@ -1074,12 +1093,19 @@ if (FB_ON) {
     auth = firebase.auth(); db = firebase.firestore();
     auth.onAuthStateChanged(async user => {
       if (!user) { auth.signInAnonymously().catch(e => console.error(e)); return; }
+      if (me && me.uid !== user.uid) {
+        // 別のアカウントに切り替わった
+        if (unsubInbox) { unsubInbox(); unsubInbox = null; }
+        inbox = []; inboxLoaded = false; chatWith = null; chatWithName = '';
+        if (isActive('chat')) show('inbox');
+      }
       me = user;
       try {
         const doc = await db.collection('users').doc(user.uid).get();
         myName = doc.exists ? doc.data().name : null;
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error(e); myName = null; }
       listenInbox(); renderDirect(); renderMe(); syncPush();
+      if (isActive('inbox')) renderInbox();
     });
   } catch (e) { console.error('Firebase init error:', e); }
 }
@@ -1123,7 +1149,7 @@ function nameForm(target, onDone){
     const v = target.querySelector('#name-in').value.trim(), err = target.querySelector('#name-err');
     if (!NAME_RE.test(v)) { err.textContent = '2〜16文字の英数字・ひらがな・カタカナ・漢字で入力してね'; return; }
     try { await registerName(v); toast(`「${v}」で登録しました`); onDone(); renderMe(); }
-    catch (e) { err.textContent = e.message === 'taken' ? 'そのなまえは使われています' : '登録できませんでした'; console.error(e); }
+    catch (e) { err.textContent = e.message === 'taken' ? 'そのなまえは使われています（自分のなまえなら下の「ログインする」から）' : '登録できませんでした'; console.error(e); }
   };
 }
 
@@ -1207,6 +1233,18 @@ function notifyCard(){
 
 /* ── Web Push の登録と送信 ── */
 let pushStatus = '';
+function deviceId(){
+  let id = store.get('oekaki-dev', '');
+  if (!id) { id = Math.random().toString(36).slice(2, 12); store.set('oekaki-dev', id); }
+  return id;
+}
+async function dropMyPushSub(){
+  try {
+    const ref = db.collection('users').doc(me.uid);
+    const cur = ((await ref.get()).data()?.pushSubs || []);
+    await ref.set({ pushSubs: cur.filter(x => { try { return JSON.parse(x).dev !== deviceId(); } catch { return false; } }) }, { merge:true });
+  } catch (e) { console.error(e); }
+}
 async function syncPush(){
   if (!PUSH_ON || !me || Notification.permission !== 'granted') return;
   try {
@@ -1216,12 +1254,15 @@ async function syncPush(){
       const raw = Uint8Array.from(atob(VAPID_PUBLIC.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
       sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: raw });
     }
-    const mine = JSON.stringify(sub.toJSON());
+    // 端末ごとに1つだけ保存（同じ端末の古い登録は上書きされる）
+    const mine = JSON.stringify({ ...sub.toJSON(), dev: deviceId() });
     const ref = db.collection('users').doc(me.uid);
     const cur = ((await ref.get()).data()?.pushSubs || []);
-    // 古い登録は期限切れ（410）になって残り続けるので、いまの端末の登録だけにする
-    if (cur.length === 1 && cur[0] === mine) { pushStatus = 'ok'; renderMe(); return; }
-    await ref.set({ pushSubs: [mine] }, { merge:true });
+    const next = [mine, ...cur.filter(x => {
+      try { const o = JSON.parse(x); return o.dev && o.dev !== deviceId() && o.endpoint !== sub.endpoint; } catch { return false; }
+    })].slice(0, 5);
+    if (next.length === cur.length && next.every((x, i) => x === cur[i])) { pushStatus = 'ok'; renderMe(); return; }
+    await ref.set({ pushSubs: next }, { merge:true });
     pushStatus = 'ok';
   } catch (e) { console.error('push subscribe failed', e); pushStatus = 'エラー: ' + (e && (e.name + ' ' + e.message)); }
   renderMe();
@@ -1245,6 +1286,82 @@ async function pingPush(toUid){
   } catch (e) { toast('🔔 通知サーバーにつながりません: ' + (e && e.message), 5000); }
 }
 
+/* ── アカウント（ほかの端末からも同じなまえで使う） ── */
+// なまえをメールアドレスの形に変換して、Firebase のメール/パスワード認証を使う
+const nameToEmail = n => 'u' + [...new TextEncoder().encode(n)].map(b => b.toString(16).padStart(2, '0')).join('') + '@oekaki-letter.app';
+const hasPassword = () => !!me && !me.isAnonymous;
+function authErr(e){
+  const c = e && e.code || '';
+  if (c.includes('operation-not-allowed')) return 'ログイン機能がまだ有効になっていません（Firebase で「メール/パスワード」を有効にしてください）';
+  if (c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found') || c.includes('invalid-login')) return 'なまえかパスワードが違います';
+  if (c.includes('too-many-requests')) return '何度も失敗したので、少し時間をおいてね';
+  if (c.includes('email-already-in-use') || c.includes('credential-already-in-use')) return 'このなまえにはもうパスワードが設定されています';
+  if (c.includes('weak-password')) return 'パスワードは6文字以上にしてね';
+  if (c.includes('requires-recent-login')) return 'もう一度ログインしてからやり直してね';
+  return 'うまくいきませんでした（' + (c || (e && e.message)) + '）';
+}
+function accountCard(){
+  if (hasPassword()) return `<div class="acct">
+      <div class="note">🔐 パスワード設定済み：ほかの端末でも「${esc(myName)}」でログインできます</div>
+      <button class="link" id="btn-logout">この端末からログアウト</button>
+    </div>`;
+  return `<div class="acct">
+      <div class="note">🔐 パスワードを決めると、ほかの端末（パソコン・タブレットなど）でも同じなまえで使えます</div>
+      <input type="password" id="pw1" placeholder="パスワード（6文字以上）" autocomplete="new-password">
+      <input type="password" id="pw2" placeholder="もう一度" autocomplete="new-password">
+      <div class="err" id="pw-err"></div>
+      <button class="ghost" id="btn-setpw">パスワードを設定する</button>
+      <button class="link" id="btn-login">別の端末で作ったなまえでログインする</button>
+    </div>`;
+}
+function bindAccountCard(c){
+  const lo = c.querySelector('#btn-logout');
+  if (lo) lo.onclick = async () => {
+    if (!confirm('この端末からログアウトしますか？（もう一度ログインすれば元に戻ります）')) return;
+    await dropMyPushSub();
+    await auth.signOut();   // onAuthStateChanged で新しい匿名ユーザーになる
+    toast('ログアウトしました');
+  };
+  const sp = c.querySelector('#btn-setpw');
+  if (sp) sp.onclick = async () => {
+    const a = c.querySelector('#pw1').value, b = c.querySelector('#pw2').value, err = c.querySelector('#pw-err');
+    err.textContent = '';
+    if (a.length < 6) { err.textContent = 'パスワードは6文字以上にしてね'; return; }
+    if (a !== b) { err.textContent = '2回入れたパスワードがちがいます'; return; }
+    sp.disabled = true;
+    try {
+      const cred = firebase.auth.EmailAuthProvider.credential(nameToEmail(myName), a);
+      const r = await me.linkWithCredential(cred);
+      me = r.user;
+      toast('パスワードを設定しました。ほかの端末からもログインできます', 4000);
+      renderMe();
+    } catch (e) { err.textContent = authErr(e); console.error(e); }
+    finally { sp.disabled = false; }
+  };
+  const li = c.querySelector('#btn-login');
+  if (li) li.onclick = () => openLogin();
+}
+function openLogin(){
+  const m = $('#login-modal');
+  $('#lg-name').value = ''; $('#lg-pw').value = ''; $('#lg-err').textContent = '';
+  $('#lg-warn').style.display = myName && !hasPassword() ? '' : 'none';
+  $('#lg-warn').textContent = myName ? `⚠️ この端末の「${myName}」はパスワード未設定です。ログインすると、この端末からは「${myName}」に戻れなくなります。` : '';
+  m.classList.add('on');
+  $('#lg-cancel').onclick = () => m.classList.remove('on');
+  $('#lg-ok').onclick = async () => {
+    const name = $('#lg-name').value.trim(), pw = $('#lg-pw').value, err = $('#lg-err');
+    if (!name || !pw) { err.textContent = 'なまえとパスワードを入れてね'; return; }
+    $('#lg-ok').disabled = true;
+    try {
+      if (me) await dropMyPushSub();
+      await auth.signInWithEmailAndPassword(nameToEmail(name), pw);
+      m.classList.remove('on');
+      toast(`「${name}」でログインしました`);
+    } catch (e) { err.textContent = authErr(e); console.error(e); }
+    finally { $('#lg-ok').disabled = false; }
+  };
+}
+
 /* ── 送ったあと LINE で知らせる ── */
 let lastSentTo = '';
 function openSentModal(to){
@@ -1263,11 +1380,18 @@ function renderMe(){
   const c = $('#me-card');
   if (!FB_ON) { c.innerHTML = `<div class="note">受信箱を使うには Firebase の設定が必要です（index.html 内の FB_CONFIG）。</div>`; return; }
   if (!me) { c.innerHTML = `<div class="note">接続中…</div>`; return; }
-  if (!myName) { $('#me-details').open = true; nameForm(c, () => {}); return; }
+  if (!myName) {
+    $('#me-details').open = true;
+    nameForm(c, () => {});
+    c.insertAdjacentHTML('beforeend', `<div class="acct"><div class="note">ほかの端末でもう登録している人は👇</div><button class="ghost" id="btn-login">🔑 ログインする</button></div>`);
+    $('#btn-login').onclick = () => openLogin();
+    return;
+  }
   $('#me-summary').textContent = `⚙️ あなた: ${myName}（なまえ・通知の設定）`;
   if (!myName || (typeof Notification !== 'undefined' && Notification.permission === 'default')) $('#me-details').open = true;
   c.innerHTML = `<div class="note">あなたのなまえ</div><div class="h2" style="font-size:20px">${esc(myName)}</div>
-    <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>${notifyCard()}`;
+    <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>${notifyCard()}${accountCard()}`;
+  bindAccountCard(c);
   const tb = c.querySelector('#btn-test-notify');
   if (tb) tb.onclick = async () => {
     try {
