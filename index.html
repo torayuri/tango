@@ -156,6 +156,7 @@
     .modal{background:var(--card);border-radius:22px;padding:22px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px;text-align:center;}
     .modal .big{font-size:42px;}
     .line-btn{width:100%;padding:14px;border-radius:14px;background:#06c755;color:#fff;font-size:16px;font-weight:800;}
+    .site-foot{width:100%;max-width:520px;text-align:center;font-size:11px;color:var(--sub);padding:24px 0 4px;}
     .toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);background:rgba(30,25,20,.92);color:#fff;padding:11px 18px;border-radius:14px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:999;max-width:90vw;text-align:center;}
     .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
   </style>
@@ -302,6 +303,8 @@
     <button class="link" id="btn-sent-close">とじる</button>
   </div>
 </div>
+
+<footer class="site-foot" id="site-foot"></footer>
 
 <div class="toast" id="toast"></div>
 
@@ -1594,6 +1597,14 @@ $('#btn-new-chat').onclick = () => {
 renderMe();
 
 if (location.hash === '#inbox') show('inbox');
+
+/* ── 最終更新日（GitHub Pages が返すファイルの更新日時） ── */
+(() => {
+  const d = new Date(document.lastModified);
+  if (isNaN(d) || Math.abs(Date.now() - d) < 5000) return;   // 更新日時が取れないときは出さない
+  const z = n => String(n).padStart(2, '0');
+  $('#site-foot').textContent = `最終更新：${d.getFullYear()}/${z(d.getMonth() + 1)}/${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+})();
 
 /* ── PWA ── */
 if ('serviceWorker' in navigator) {
