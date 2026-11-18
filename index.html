@@ -112,6 +112,10 @@
     .acct{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px;margin-top:4px;}
     input[type=password]{width:100%;border:2px solid var(--line);border-radius:12px;padding:12px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink);outline:none;}
     input[type=password]:focus{border-color:var(--accent);}
+    input.pin{letter-spacing:.4em;font-size:20px;text-align:center;}
+    input.pin::placeholder{letter-spacing:normal;font-size:15px;}
+    .pin-show{background:var(--bg);border-radius:12px;padding:12px;text-align:center;font-size:15px;}
+    .pin-show b{font-size:26px;letter-spacing:.2em;margin-left:6px;}
     .conv{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:12px;text-align:left;width:100%;}
     .avatar{width:48px;height:48px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff;}
     .conv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
@@ -276,9 +280,9 @@
 <div class="modal-bg" id="login-modal">
   <div class="modal text-modal">
     <div class="h2">🔑 ログイン</div>
-    <div class="note">ほかの端末でパスワードを設定した「なまえ」とパスワードを入れてください。</div>
+    <div class="note">ほかの端末でPINを設定した「なまえ」と、4桁のPINを入れてください。</div>
     <input type="text" id="lg-name" maxlength="16" placeholder="なまえ" autocomplete="username">
-    <input type="password" id="lg-pw" placeholder="パスワード" autocomplete="current-password">
+    <input type="password" id="lg-pw" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="PIN（数字4桁）" autocomplete="off">
     <div class="note" id="lg-warn" style="color:#c2410c"></div>
     <div class="err" id="lg-err"></div>
     <div class="row tx-btns">
@@ -1300,42 +1304,90 @@ function authErr(e){
   if (c.includes('requires-recent-login')) return 'もう一度ログインしてからやり直してね';
   return 'うまくいきませんでした（' + (c || (e && e.message)) + '）';
 }
+// 4桁のPINを Firebase のパスワード（6文字以上が必要）に変換する
+const pinToPassword = pin => `oekaki-pin-${pin}`;
+const isPin = v => /^\d{4}$/.test(v);
+// この端末で使ったPINを覚えておく（忘れたときに、ログイン中の端末で確認・変更できるように）
+const savedPin = () => { const v = store.get('oekaki-pin', null); return v && me && v.uid === me.uid ? v.pin : ''; };
+const rememberPin = pin => store.set('oekaki-pin', { uid: me.uid, pin });
+const pinInput = (id, ph) => `<input type="password" id="${id}" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="${ph}" autocomplete="off">`;
+
 function accountCard(){
   if (hasPassword()) return `<div class="acct">
-      <div class="note">🔐 パスワード設定済み：ほかの端末でも「${esc(myName)}」でログインできます</div>
+      <div class="note">🔐 PIN設定済み：ほかの端末でも「${esc(myName)}」＋PINでログインできます</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="ghost" id="btn-showpin" style="width:auto;flex:1">🔢 PINを確認</button>
+        <button class="ghost" id="btn-chpin" style="width:auto;flex:1">PINを変える</button>
+      </div>
+      <div id="pin-area"></div>
       <button class="link" id="btn-logout">この端末からログアウト</button>
     </div>`;
   return `<div class="acct">
-      <div class="note">🔐 パスワードを決めると、ほかの端末（パソコン・タブレットなど）でも同じなまえで使えます</div>
-      <input type="password" id="pw1" placeholder="パスワード（6文字以上）" autocomplete="new-password">
-      <input type="password" id="pw2" placeholder="もう一度" autocomplete="new-password">
+      <div class="note">🔐 4桁のPINを決めると、ほかの端末（パソコン・タブレットなど）でも同じなまえで使えます</div>
+      ${pinInput('pw1', 'PIN（数字4桁）')}
+      ${pinInput('pw2', 'もう一度')}
       <div class="err" id="pw-err"></div>
-      <button class="ghost" id="btn-setpw">パスワードを設定する</button>
+      <button class="ghost" id="btn-setpw">PINを設定する</button>
       <button class="link" id="btn-login">別の端末で作ったなまえでログインする</button>
     </div>`;
+}
+async function changePin(oldPin, newPin){
+  const email = nameToEmail(myName);
+  await me.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(email, pinToPassword(oldPin)));
+  await me.updatePassword(pinToPassword(newPin));
+  rememberPin(newPin);
 }
 function bindAccountCard(c){
   const lo = c.querySelector('#btn-logout');
   if (lo) lo.onclick = async () => {
-    if (!confirm('この端末からログアウトしますか？（もう一度ログインすれば元に戻ります）')) return;
+    const pin = savedPin();
+    if (!confirm(`この端末からログアウトしますか？${pin ? `\n\nあなたのPINは「${pin}」です。ログインし直すときに使うので覚えておいてね。` : ''}`)) return;
     await dropMyPushSub();
+    store.set('oekaki-pin', null);
     await auth.signOut();   // onAuthStateChanged で新しい匿名ユーザーになる
     toast('ログアウトしました');
+  };
+  const area = c.querySelector('#pin-area');
+  const sh = c.querySelector('#btn-showpin');
+  if (sh) sh.onclick = () => {
+    const pin = savedPin();
+    area.innerHTML = pin
+      ? `<div class="pin-show">あなたのPIN：<b>${pin}</b></div>`
+      : `<div class="note">この端末ではPINを覚えていません（PINを決めたのが別の端末のときなど）。PINを決めた端末で確認してください。</div>`;
+  };
+  const ch = c.querySelector('#btn-chpin');
+  if (ch) ch.onclick = () => {
+    const known = savedPin();
+    area.innerHTML = `${known ? '' : pinInput('cp0', 'いまのPIN')}
+      ${pinInput('cp1', '新しいPIN（数字4桁）')}${pinInput('cp2', 'もう一度')}
+      <div class="err" id="cp-err"></div>
+      <button class="ghost" id="cp-ok">変更する</button>`;
+    area.querySelector('#cp-ok').onclick = async () => {
+      const err = area.querySelector('#cp-err');
+      const old = known || area.querySelector('#cp0').value, a = area.querySelector('#cp1').value, b = area.querySelector('#cp2').value;
+      err.textContent = '';
+      if (!isPin(old)) { err.textContent = 'いまのPINを数字4桁で入れてね'; return; }
+      if (!isPin(a)) { err.textContent = '新しいPINは数字4桁にしてね'; return; }
+      if (a !== b) { err.textContent = '2回入れたPINがちがいます'; return; }
+      try { await changePin(old, a); area.innerHTML = `<div class="pin-show">PINを <b>${a}</b> に変えました</div>`; }
+      catch (e) { err.textContent = authErr(e).replace('なまえかパスワード', 'いまのPIN'); console.error(e); }
+    };
   };
   const sp = c.querySelector('#btn-setpw');
   if (sp) sp.onclick = async () => {
     const a = c.querySelector('#pw1').value, b = c.querySelector('#pw2').value, err = c.querySelector('#pw-err');
     err.textContent = '';
-    if (a.length < 6) { err.textContent = 'パスワードは6文字以上にしてね'; return; }
-    if (a !== b) { err.textContent = '2回入れたパスワードがちがいます'; return; }
+    if (!isPin(a)) { err.textContent = 'PINは数字4桁にしてね'; return; }
+    if (a !== b) { err.textContent = '2回入れたPINがちがいます'; return; }
     sp.disabled = true;
     try {
-      const cred = firebase.auth.EmailAuthProvider.credential(nameToEmail(myName), a);
+      const cred = firebase.auth.EmailAuthProvider.credential(nameToEmail(myName), pinToPassword(a));
       const r = await me.linkWithCredential(cred);
       me = r.user;
-      toast('パスワードを設定しました。ほかの端末からもログインできます', 4000);
+      rememberPin(a);
+      toast('PINを設定しました。ほかの端末からもログインできます', 4000);
       renderMe();
-    } catch (e) { err.textContent = authErr(e); console.error(e); }
+    } catch (e) { err.textContent = authErr(e).replace('パスワードが設定', 'PINが設定'); console.error(e); }
     finally { sp.disabled = false; }
   };
   const li = c.querySelector('#btn-login');
@@ -1345,19 +1397,20 @@ function openLogin(){
   const m = $('#login-modal');
   $('#lg-name').value = ''; $('#lg-pw').value = ''; $('#lg-err').textContent = '';
   $('#lg-warn').style.display = myName && !hasPassword() ? '' : 'none';
-  $('#lg-warn').textContent = myName ? `⚠️ この端末の「${myName}」はパスワード未設定です。ログインすると、この端末からは「${myName}」に戻れなくなります。` : '';
+  $('#lg-warn').textContent = myName ? `⚠️ この端末の「${myName}」はPIN未設定です。ログインすると、この端末からは「${myName}」に戻れなくなります。` : '';
   m.classList.add('on');
   $('#lg-cancel').onclick = () => m.classList.remove('on');
   $('#lg-ok').onclick = async () => {
-    const name = $('#lg-name').value.trim(), pw = $('#lg-pw').value, err = $('#lg-err');
-    if (!name || !pw) { err.textContent = 'なまえとパスワードを入れてね'; return; }
+    const name = $('#lg-name').value.trim(), pin = $('#lg-pw').value, err = $('#lg-err');
+    if (!name || !isPin(pin)) { err.textContent = 'なまえと4桁のPINを入れてね'; return; }
     $('#lg-ok').disabled = true;
     try {
       if (me) await dropMyPushSub();
-      await auth.signInWithEmailAndPassword(nameToEmail(name), pw);
+      const r = await auth.signInWithEmailAndPassword(nameToEmail(name), pinToPassword(pin));
+      store.set('oekaki-pin', { uid: r.user.uid, pin });
       m.classList.remove('on');
       toast(`「${name}」でログインしました`);
-    } catch (e) { err.textContent = authErr(e); console.error(e); }
+    } catch (e) { err.textContent = authErr(e).replace('パスワード', 'PIN'); console.error(e); }
     finally { $('#lg-ok').disabled = false; }
   };
 }

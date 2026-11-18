@@ -1,4 +1,4 @@
-const CACHE = 'oekaki-v14';
+const CACHE = 'oekaki-v15';
 const CDN_URLS = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
