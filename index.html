@@ -1381,8 +1381,22 @@ function bindAccountCard(c){
     if (a !== b) { err.textContent = '2回入れたPINがちがいます'; return; }
     sp.disabled = true;
     try {
-      const cred = firebase.auth.EmailAuthProvider.credential(nameToEmail(myName), pinToPassword(a));
-      const r = await me.linkWithCredential(cred);
+      // 今の匿名アカウントに なまえ＋PIN を付ける。
+      // 古い方法（linkWithCredential）は Firebase に断られるので、新しい方法で直接つなぐ
+      const email = nameToEmail(myName), pw = pinToPassword(a);
+      const idToken = await me.getIdToken();
+      const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_CONFIG.apiKey}`, {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ idToken, email, password: pw, returnSecureToken: true }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        const m = j.error?.message || '';
+        throw { code: m.includes('EMAIL_EXISTS') ? 'email-already-in-use' : m.includes('OPERATION_NOT_ALLOWED') ? 'operation-not-allowed' : m.toLowerCase() };
+      }
+      if (j.localId !== me.uid) throw { code: 'uid-mismatch' };
+      // アプリ側のログイン状態も更新（同じアカウントなのでトークはそのまま）
+      const r = await auth.signInWithEmailAndPassword(email, pw);
       me = r.user;
       rememberPin(a);
       toast('PINを設定しました。ほかの端末からもログインできます', 4000);
