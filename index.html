@@ -104,6 +104,35 @@
 
     /* inbox */
     .list{display:flex;flex-direction:column;gap:12px;}
+    .me-details{padding:12px 16px;}
+    .me-details summary{font-size:14px;font-weight:700;color:var(--sub);cursor:pointer;list-style:none;}
+    .me-details summary::-webkit-details-marker{display:none;}
+    .me-details[open] summary{margin-bottom:12px;}
+    .me-body{display:flex;flex-direction:column;gap:10px;}
+    .conv{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:12px;text-align:left;width:100%;}
+    .avatar{width:48px;height:48px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff;}
+    .conv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+    .conv-name{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px;}
+    .conv-last{font-size:13px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .conv-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
+    .conv-side img{width:46px;height:46px;border-radius:10px;object-fit:cover;border:1px solid var(--line);}
+    .conv-when{font-size:11px;color:var(--sub);}
+    .unread{background:#e5484d;color:#fff;font-size:11px;font-weight:700;min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;}
+    .chat-hdr{position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0;}
+    .chat{display:flex;flex-direction:column;gap:14px;padding:4px 0 110px;}
+    .day{align-self:center;font-size:11px;color:var(--sub);background:var(--line);padding:3px 10px;border-radius:10px;}
+    .msg-row{display:flex;flex-direction:column;align-items:flex-start;max-width:78%;}
+    .msg-row.mine{align-self:flex-end;align-items:flex-end;}
+    .bubble{background:var(--card);border-radius:18px 18px 18px 6px;box-shadow:var(--shadow);overflow:hidden;width:100%;}
+    .msg-row.mine .bubble{border-radius:18px 18px 6px 18px;background:#ffe3d6;}
+    .bubble img{display:block;width:100%;background:#fff;cursor:pointer;}
+    .bubble .txt{padding:8px 12px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+    .msg-meta{font-size:11px;color:var(--sub);margin-top:3px;padding:0 4px;}
+    .msg-acts{display:none;gap:6px;margin-top:6px;flex-wrap:wrap;}
+    .msg-row.open .msg-acts{display:flex;}
+    .msg-acts button{font-size:12px;font-weight:700;padding:7px 10px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);}
+    .chat-foot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px max(14px,env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,transparent);display:flex;justify-content:center;z-index:5;}
+    .chat-foot .primary{max-width:520px;}
     .item{background:var(--card);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;}
     .item img{width:100%;display:block;background:#fff;}
     .item .meta{padding:10px 14px;display:flex;flex-direction:column;gap:4px;}
@@ -194,15 +223,32 @@
   </div>
 </section>
 
-<!-- ━━━━━━━━━━ 受信箱 ━━━━━━━━━━ -->
+<!-- ━━━━━━━━━━ トーク一覧 ━━━━━━━━━━ -->
 <section id="scr-inbox" class="screen">
   <div class="hdr">
     <button class="icon-btn" data-back="draw" title="戻る">←</button>
-    <div class="logo">受信箱</div>
+    <div class="logo">トーク</div>
     <div style="width:42px"></div>
   </div>
-  <div class="card" id="me-card"></div>
+  <details class="card me-details" id="me-details">
+    <summary id="me-summary">⚙️ 自分のなまえ・通知の設定</summary>
+    <div id="me-card" class="me-body"></div>
+  </details>
   <div class="list" id="inbox-list"></div>
+  <button class="ghost" id="btn-new-chat">＋ 新しい相手に絵を送る</button>
+</section>
+
+<!-- ━━━━━━━━━━ トーク画面 ━━━━━━━━━━ -->
+<section id="scr-chat" class="screen">
+  <div class="hdr chat-hdr">
+    <button class="icon-btn" data-back="inbox" title="戻る">←</button>
+    <div class="logo" id="chat-title"></div>
+    <div style="width:42px"></div>
+  </div>
+  <div class="chat" id="chat-list"></div>
+  <div class="chat-foot">
+    <button class="primary" id="btn-chat-draw">🎨 絵を描いて送る</button>
+  </div>
 </section>
 
 <div class="modal-bg" id="text-modal">
@@ -294,6 +340,7 @@ function show(name){
   window.scrollTo(0, 0);
   if (name === 'send') prepareSend();
   if (name === 'inbox') renderInbox();
+  if (name === 'chat') renderChat(true);
 }
 document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => show(b.dataset.back));
 
@@ -1040,17 +1087,18 @@ if (FB_ON) {
 function listenInbox(){
   if (unsubInbox || !me) return;
   unsubInbox = db.collection('users').doc(me.uid).collection('inbox')
-    .orderBy('createdAt', 'desc').limit(50)
+    .orderBy('createdAt', 'desc').limit(300)
     .onSnapshot(snap => {
       if (inboxLoaded) {
-        snap.docChanges().filter(c => c.type === 'added' && !c.doc.data().read)
-          .forEach(c => notifyArrival(c.doc.data()));
+        snap.docChanges().filter(c => c.type === 'added' && !c.doc.data().read && !c.doc.data().mine)
+          .forEach(c => { const x = c.doc.data(); if (!(chatWith === x.from && isActive('chat'))) notifyArrival(x); });
       }
       inboxLoaded = true;
-      inbox = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      const n = inbox.filter(x => !x.read).length;
+      inbox = snap.docs.map(d => ({ id:d.id, ...d.data({ serverTimestamps:'estimate' }) }));
+      const n = inbox.filter(x => !x.read && !x.mine).length;
       const b = $('#inbox-badge'); b.textContent = n; b.classList.toggle('on', n > 0);
-      if ($('#scr-inbox').classList.contains('active')) renderInbox();
+      if (isActive('inbox')) renderInbox();
+      if (isActive('chat')) renderChat();
     }, e => console.error(e));
 }
 
@@ -1087,7 +1135,7 @@ function renderDirect(){
   }
   if (!me) { body.innerHTML = `<div class="note">接続中…</div>`; return; }
   if (!myName) { nameForm(body, renderDirect); return; }
-  const last = store.get('oekaki-last-to', '');
+  const last = chatWithName || store.get('oekaki-last-to', '');
   body.innerHTML = `
     <div class="note">送り先のなまえを入力してください。</div>
     <input type="text" id="to-in" maxlength="16" placeholder="相手のなまえ" value="${esc(last)}">
@@ -1110,15 +1158,20 @@ async function sendDirect(){
       image = exportCanvas(px).toDataURL('image/jpeg', q);
       if (image.length < 900000) break;
     }
-    await db.collection('users').doc(n.data().uid).collection('inbox').add({
-      from: me.uid, fromName: myName, image,
-      message: $('#send-msg').value.trim().slice(0, 140),
-      read: false, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    const toUid = n.data().uid;
+    const message = $('#send-msg').value.trim().slice(0, 140);
+    const now = firebase.firestore.FieldValue.serverTimestamp();
+    await db.collection('users').doc(toUid).collection('inbox').add({
+      from: me.uid, fromName: myName, image, message, read: false, createdAt: now,
     });
+    // 自分のトーク画面にも残す（自分の受信箱に「自分が送ったもの」として保存）
+    await db.collection('users').doc(me.uid).collection('inbox').add({
+      from: me.uid, fromName: myName, to: toUid, toName: to, mine: true, image, message, read: true, createdAt: now,
+    }).catch(e => console.error('own copy failed', e));
     store.set('oekaki-last-to', to);
-    pingPush(n.data().uid);
+    pingPush(toUid);
     $('#send-msg').value = '';
-    show('draw');
+    openChat(toUid, to);
     openSentModal(to);
   } catch (e) {
     err.textContent = e.message === 'notfound' ? 'そのなまえの人は見つかりません' : '送信できませんでした';
@@ -1127,6 +1180,7 @@ async function sendDirect(){
 }
 
 $('#btn-inbox').onclick = () => show('inbox');
+const isActive = name => $('#scr-' + name).classList.contains('active');
 
 /* ── 届いた通知 ── */
 let inboxLoaded = false;
@@ -1207,7 +1261,9 @@ function renderMe(){
   const c = $('#me-card');
   if (!FB_ON) { c.innerHTML = `<div class="note">受信箱を使うには Firebase の設定が必要です（index.html 内の FB_CONFIG）。</div>`; return; }
   if (!me) { c.innerHTML = `<div class="note">接続中…</div>`; return; }
-  if (!myName) { nameForm(c, () => {}); return; }
+  if (!myName) { $('#me-details').open = true; nameForm(c, () => {}); return; }
+  $('#me-summary').textContent = `⚙️ あなた: ${myName}（なまえ・通知の設定）`;
+  if (!myName || (typeof Notification !== 'undefined' && Notification.permission === 'default')) $('#me-details').open = true;
   c.innerHTML = `<div class="note">あなたのなまえ</div><div class="h2" style="font-size:20px">${esc(myName)}</div>
     <div class="note">このなまえを相手に教えると、絵を送ってもらえます。</div>${notifyCard()}`;
   const tb = c.querySelector('#btn-test-notify');
@@ -1232,52 +1288,116 @@ function fmtDate(ts){
   const d = ts.toDate();
   return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+/* ━━━━━━━━━━ トーク ━━━━━━━━━━ */
+let chatWith = null, chatWithName = '';
+const partnerOf = x => x.mine ? x.to : x.from;
+const partnerName = x => x.mine ? x.toName : x.fromName;
+const AV_COLORS = ['#ff7a59','#2fa8e0','#3bb273','#a45ee5','#ff7eb6','#ffb547','#4f5bd5','#8b5a3c'];
+const avColor = id => AV_COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
+const tsMs = x => x.createdAt?.toMillis ? x.createdAt.toMillis() : Date.now();
+function conversations(){
+  const map = new Map();
+  for (const x of inbox) {           // inbox は新しい順
+    const id = partnerOf(x);
+    if (!id) continue;
+    if (!map.has(id)) map.set(id, { id, name: partnerName(x), last: x, unread: 0 });
+    if (!x.mine && !x.read) map.get(id).unread++;
+  }
+  return [...map.values()];
+}
+function whenShort(x){
+  const d = new Date(tsMs(x)), now = new Date();
+  if (d.toDateString() === now.toDateString()) return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 function renderInbox(){
   renderMe();
   const list = $('#inbox-list');
   if (!FB_ON || !me) { list.innerHTML = ''; return; }
-  if (!inbox.length) { list.innerHTML = `<div class="empty">まだ絵は届いていません 🎨</div>`; return; }
-  list.innerHTML = inbox.map(x => `
-    <div class="item" data-id="${esc(x.id)}">
-      <img src="${esc(x.image)}" alt="${esc(x.fromName)}さんからの絵" loading="lazy">
-      <div class="meta">
-        <div class="from">${esc(x.fromName)} さんから${x.read ? '' : '<span class="new">NEW</span>'}</div>
-        ${x.message ? `<div class="msg">${esc(x.message)}</div>` : ''}
-        <div class="when">${fmtDate(x.createdAt)}</div>
+  const convs = conversations();
+  if (!convs.length) { list.innerHTML = `<div class="empty">まだやりとりはありません 🎨<br>下のボタンから絵を送ってみよう</div>`; return; }
+  list.innerHTML = convs.map(c => `
+    <button class="conv" data-id="${esc(c.id)}" data-name="${esc(c.name)}">
+      <div class="avatar" style="background:${avColor(c.id)}">${esc([...c.name][0] || '?')}</div>
+      <div class="conv-main">
+        <div class="conv-name">${esc(c.name)}${c.unread ? `<span class="unread">${c.unread}</span>` : ''}</div>
+        <div class="conv-last">${c.last.mine ? 'あなた: ' : ''}${c.last.message ? esc(c.last.message) : (c.last.mine ? '🎨 絵を送りました' : '🎨 絵が届きました')}</div>
       </div>
-      <div class="acts">
-        <button data-act="save">保存</button>
-        <button data-act="reply">返事をかく</button>
+      <div class="conv-side"><img src="${esc(c.last.image)}" alt=""><span class="conv-when">${whenShort(c.last)}</span></div>
+    </button>`).join('');
+  list.querySelectorAll('.conv').forEach(b => b.onclick = () => openChat(b.dataset.id, b.dataset.name));
+}
+function openChat(id, name){
+  chatWith = id; chatWithName = name;
+  show('chat');
+}
+function renderChat(scroll){
+  const list = $('#chat-list');
+  $('#chat-title').textContent = chatWithName ? `${chatWithName} さん` : '';
+  if (!me || !chatWith) { list.innerHTML = ''; return; }
+  const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+  const items = inbox.filter(x => partnerOf(x) === chatWith).slice().reverse();   // 古い順
+  if (!items.length) { list.innerHTML = `<div class="empty">まだ絵はありません 🎨</div>`; return; }
+  let lastDay = '';
+  list.innerHTML = items.map(x => {
+    const d = new Date(tsMs(x)), day = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    const sep = day !== lastDay ? `<div class="day">${d.getMonth() + 1}月${d.getDate()}日</div>` : '';
+    lastDay = day;
+    return sep + `
+    <div class="msg-row${x.mine ? ' mine' : ''}" data-id="${esc(x.id)}">
+      <div class="bubble">
+        <img src="${esc(x.image)}" alt="${x.mine ? 'あなたが送った絵' : esc(x.fromName) + 'さんからの絵'}" loading="lazy">
+        ${x.message ? `<div class="txt">${esc(x.message)}</div>` : ''}
+      </div>
+      <div class="msg-meta">${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}</div>
+      <div class="msg-acts">
         <button data-act="over">✏️ 描き足して返す</button>
+        <button data-act="save">保存</button>
         <button data-act="del">削除</button>
       </div>
-    </div>`).join('');
-  list.querySelectorAll('.item').forEach(el => {
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.msg-row').forEach(el => {
     const x = inbox.find(i => i.id === el.dataset.id);
-    const ref = db.collection('users').doc(me.uid).collection('inbox').doc(x.id);
+    el.querySelector('img').onclick = () => {
+      const open = el.classList.contains('open');
+      list.querySelectorAll('.msg-row.open').forEach(o => o.classList.remove('open'));
+      if (!open) {
+        el.classList.add('open');
+        // 下のボタンに隠れないようにスクロール
+        const r = el.getBoundingClientRect(), limit = window.innerHeight - 100;
+        if (r.bottom > limit) window.scrollBy({ top: r.bottom - limit, behavior:'smooth' });
+      }
+    };
     el.querySelector('[data-act=save]').onclick = async () => {
       const blob = await (await fetch(x.image)).blob();
-      downloadBlob(blob, `from_${x.fromName}.jpg`);
-    };
-    el.querySelector('[data-act=reply]').onclick = () => {
-      store.set('oekaki-last-to', x.fromName);
-      show('draw'); toast(`${x.fromName} さんへの返事をかこう`);
+      downloadBlob(blob, `${x.mine ? 'to' : 'from'}_${partnerName(x)}.jpg`);
     };
     el.querySelector('[data-act=over]').onclick = () => {
       if (!isEmpty() && !confirm('いま描いている絵は消えます。いいですか？')) return;
       ops = []; redo = [];
       redraw(); setBase(x.image);
-      store.set('oekaki-last-to', x.fromName);
-      show('draw'); toast(`${x.fromName} さんの絵に描き足そう`);
+      store.set('oekaki-last-to', chatWithName);
+      show('draw'); toast(`絵に描き足して ${chatWithName} さんに返そう`);
     };
     el.querySelector('[data-act=del]').onclick = async () => {
-      if (confirm('この絵を削除しますか？')) await ref.delete().catch(console.error);
+      if (confirm('この絵を削除しますか？（あなたの画面から消えます）'))
+        await db.collection('users').doc(me.uid).collection('inbox').doc(x.id).delete().catch(console.error);
     };
   });
-  // 開いたら既読に
-  inbox.filter(x => !x.read).forEach(x =>
+  if (scroll || atBottom) requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+  // 開いているトークは既読に
+  items.filter(x => !x.mine && !x.read).forEach(x =>
     db.collection('users').doc(me.uid).collection('inbox').doc(x.id).update({ read:true }).catch(() => {}));
 }
+$('#btn-chat-draw').onclick = () => {
+  store.set('oekaki-last-to', chatWithName);
+  show('draw'); toast(`${chatWithName} さんへの絵をかこう`);
+};
+$('#btn-new-chat').onclick = () => {
+  chatWith = null; chatWithName = '';
+  show('draw'); toast('絵をかいたら「この絵を送る」で相手のなまえを入れてね');
+};
 renderMe();
 
 if (location.hash === '#inbox') show('inbox');
